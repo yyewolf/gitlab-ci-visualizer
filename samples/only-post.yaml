@@ -1,0 +1,12 @@
+---
+test:
+  stage: .post
+  image: alpine:3.20.3
+  needs: []
+  only:
+  - test
+stages:
+- ".pre"
+- build
+- deploy
+- ".post"

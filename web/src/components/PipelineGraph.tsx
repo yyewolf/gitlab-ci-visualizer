@@ -1,0 +1,304 @@
+import { useMemo, useCallback, useState } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  type Node,
+  type Edge as FlowEdge,
+  type NodeMouseHandler,
+  MarkerType,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import type { Pipeline, Job, Edge } from "../types";
+import JobNode, { type JobNodeData } from "./JobNode";
+
+interface Props {
+  pipeline: Pipeline;
+  selectedJob: Job | null;
+  onSelectJob: (job: Job | null) => void;
+  showStageEdges: boolean;
+  showDisabled: boolean;
+}
+
+const NODE_W = 208;
+const NODE_H = 80;
+const STAGE_GAP = 80;
+const JOB_GAP = 12;
+const STAGE_HEADER_H = 32;
+
+const nodeTypes = { job: JobNode };
+
+export default function PipelineGraph({
+  pipeline,
+  selectedJob,
+  onSelectJob,
+  showStageEdges,
+  showDisabled,
+}: Props) {
+  const [hoveredJobName, setHoveredJobName] = useState<string | null>(null);
+
+  // Stable structure: positions, isInstant, visible sets
+  const { baseNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames } =
+    useMemo(
+      () => buildGraph(pipeline, showStageEdges, showDisabled),
+      [pipeline, showStageEdges, showDisabled],
+    );
+
+  // Disabled jobs suppress path highlighting and dimming when hovered.
+  const hoveredJobEnabled = useMemo(() => {
+    if (!hoveredJobName) return true;
+    return pipeline.jobs.find((j) => j.name === hoveredJobName)?.enabled ?? true;
+  }, [hoveredJobName, pipeline.jobs]);
+
+  // Ancestor path uses ALL edges (stage + needs) so hovering a job shows its full
+  // upstream chain even when stage edges aren't drawn.
+  const ancestorPath = useMemo(() => {
+    if (!hoveredJobName || !hoveredJobEnabled) return null;
+    return computeAncestors(hoveredJobName, allVisibleEdges, visibleJobNames);
+  }, [hoveredJobName, hoveredJobEnabled, allVisibleEdges, visibleJobNames]);
+
+  // Merge hover/selection state into nodes
+  const nodes: Node[] = useMemo(
+    () =>
+      baseNodes.map((n) => ({
+        ...n,
+        data: {
+          ...(n.data as JobNodeData),
+          isSelected: n.id === selectedJob?.name,
+          isHighlighted: n.id === hoveredJobName,
+          isAncestor: ancestorPath?.jobs.has(n.id) ?? false,
+          isDimmed:
+            hoveredJobName != null &&
+            hoveredJobEnabled &&
+            n.id !== hoveredJobName &&
+            !(ancestorPath?.jobs.has(n.id)),
+        } satisfies JobNodeData,
+      })),
+    [baseNodes, selectedJob, hoveredJobName, hoveredJobEnabled, ancestorPath],
+  );
+
+  // Merge path highlighting into edges
+  const edges: FlowEdge[] = useMemo(() => {
+    const isHovering = hoveredJobName != null && hoveredJobEnabled;
+    return baseFlowEdges.map((e) => {
+      const onPath = ancestorPath?.edgeIds.has(e.id) ?? false;
+      return {
+        ...e,
+        animated: onPath || e.animated,
+        style: {
+          ...e.style,
+          stroke: onPath ? "#f59e0b" : e.style?.stroke,
+          strokeWidth: onPath ? 2 : e.style?.strokeWidth,
+          opacity: isHovering && !onPath ? 0.08 : 1,
+        },
+        markerEnd: onPath
+          ? { type: MarkerType.ArrowClosed, color: "#f59e0b", width: 12, height: 12 }
+          : e.markerEnd,
+      };
+    });
+  }, [baseFlowEdges, hoveredJobName, ancestorPath]);
+
+  const onNodeClick: NodeMouseHandler = useCallback(
+    (_, node) => {
+      const job = pipeline.jobs.find((j) => j.name === node.id);
+      onSelectJob(job ?? null);
+    },
+    [pipeline, onSelectJob],
+  );
+
+  const onNodeMouseEnter: NodeMouseHandler = useCallback((_, node) => {
+    setHoveredJobName(node.id);
+  }, []);
+
+  const onNodeMouseLeave: NodeMouseHandler = useCallback(() => {
+    setHoveredJobName(null);
+  }, []);
+
+  const onPaneClick = useCallback(() => onSelectJob(null), [onSelectJob]);
+
+  return (
+    <div className="flex-1 relative bg-zinc-950">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onNodeClick={onNodeClick}
+        onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
+        onPaneClick={onPaneClick}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.2}
+        maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background color="#27272a" gap={20} />
+        <Controls className="!bg-zinc-900 !border-zinc-700 [&>button]:!bg-zinc-900 [&>button]:!border-zinc-700 [&>button]:!text-zinc-400 [&>button:hover]:!bg-zinc-800" />
+        <MiniMap
+          className="!bg-zinc-900 !border-zinc-700"
+          nodeColor={(n) => {
+            const d = n.data as JobNodeData;
+            if (!d.job.enabled) return "#52525b";
+            const colors: Record<string, string> = {
+              on_success: "#10b981",
+              always: "#3b82f6",
+              manual: "#f59e0b",
+              on_failure: "#f97316",
+              never: "#52525b",
+            };
+            return colors[d.job.when] ?? "#10b981";
+          }}
+          maskColor="rgba(0,0,0,0.6)"
+        />
+      </ReactFlow>
+
+      {visibleStages.length > 0 && (
+        <StageLegend
+          stages={visibleStages}
+          jobs={baseNodes.map((n) => (n.data as JobNodeData).job)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---- graph builder (stable: no hover/selection state) ----
+
+function buildGraph(
+  pipeline: Pipeline,
+  showStageEdges: boolean,
+  showDisabled: boolean,
+): {
+  baseNodes: Node[];
+  baseFlowEdges: FlowEdge[];
+  allVisibleEdges: Edge[];
+  visibleStages: string[];
+  visibleJobNames: Set<string>;
+} {
+  const visibleJobs = showDisabled ? pipeline.jobs : pipeline.jobs.filter((j) => j.enabled);
+  const visibleJobNames = new Set(visibleJobs.map((j) => j.name));
+
+  const stagesWithJobs = new Set(visibleJobs.map((j) => j.stage));
+  const visibleStages = pipeline.stages.filter((s) => stagesWithJobs.has(s));
+  const stageIdx = new Map(visibleStages.map((s, i) => [s, i]));
+
+  // All edges between visible jobs, used for ancestor path computation regardless
+  // of whether stage edges are currently drawn.
+  const allVisibleEdges = pipeline.edges.filter(
+    (e) => visibleJobNames.has(e.from) && visibleJobNames.has(e.to),
+  );
+
+  // Edges that are actually drawn (respects showStageEdges)
+  const drawnEdges = pipeline.edges.filter(
+    (e) =>
+      visibleJobNames.has(e.from) &&
+      visibleJobNames.has(e.to) &&
+      (showStageEdges || e.type === "needs"),
+  );
+
+  // "Instant" = no incoming edges across ALL visible edges (not just drawn ones)
+  const hasIncoming = new Set(allVisibleEdges.map((e) => e.to));
+
+  const stageJobCounts = new Map<string, number>();
+  const baseNodes: Node[] = visibleJobs.map((job) => {
+    const si = stageIdx.get(job.stage) ?? 0;
+    const count = stageJobCounts.get(job.stage) ?? 0;
+    stageJobCounts.set(job.stage, count + 1);
+    return {
+      id: job.name,
+      type: "job",
+      position: {
+        x: si * (NODE_W + STAGE_GAP),
+        y: STAGE_HEADER_H + count * (NODE_H + JOB_GAP),
+      },
+      data: {
+        job,
+        isInstant: !hasIncoming.has(job.name),
+        // hover/selection fields filled in merge step
+        isSelected: false,
+        isHighlighted: false,
+        isAncestor: false,
+        isDimmed: false,
+      } satisfies JobNodeData,
+    };
+  });
+
+  const baseFlowEdges: FlowEdge[] = drawnEdges.map((e) => ({
+    id: `${e.from}→${e.to}`,
+    source: e.from,
+    target: e.to,
+    type: "smoothstep",
+    animated: false,
+    style: {
+      stroke: e.type === "needs" ? "#60a5fa" : "#3f3f46",
+      strokeWidth: e.type === "needs" ? 2 : 1,
+      strokeDasharray: e.type === "stage" ? "4 4" : undefined,
+    },
+    markerEnd:
+      e.type === "needs"
+        ? { type: MarkerType.ArrowClosed, color: "#60a5fa", width: 12, height: 12 }
+        : undefined,
+  }));
+
+  return { baseNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames };
+}
+
+// ---- ancestor BFS ----
+
+function computeAncestors(
+  fromName: string,
+  edges: Edge[],
+  visibleJobNames: Set<string>,
+): { jobs: Set<string>; edgeIds: Set<string> } {
+  // Reverse adjacency: target → [{source, edgeId}]
+  const revAdj = new Map<string, Array<{ source: string; edgeId: string }>>();
+  for (const e of edges) {
+    if (!visibleJobNames.has(e.from) || !visibleJobNames.has(e.to)) continue;
+    const edgeId = `${e.from}→${e.to}`;
+    const arr = revAdj.get(e.to) ?? [];
+    arr.push({ source: e.from, edgeId });
+    revAdj.set(e.to, arr);
+  }
+
+  const jobs = new Set<string>();
+  const edgeIds = new Set<string>();
+  const queue = [fromName];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const { source, edgeId } of revAdj.get(cur) ?? []) {
+      edgeIds.add(edgeId);
+      if (!jobs.has(source)) {
+        jobs.add(source);
+        queue.push(source);
+      }
+    }
+  }
+  return { jobs, edgeIds };
+}
+
+// ---- stage legend ----
+
+function StageLegend({ stages, jobs }: { stages: string[]; jobs: Job[] }) {
+  const counts = new Map<string, number>();
+  for (const j of jobs) counts.set(j.stage, (counts.get(j.stage) ?? 0) + 1);
+
+  return (
+    <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-none z-10">
+      {stages.map((s) => {
+        const count = counts.get(s) ?? 0;
+        return (
+          <div
+            key={s}
+            className="bg-zinc-900/80 backdrop-blur border border-zinc-700 rounded px-2 py-1 text-center"
+          >
+            <p className="text-[10px] font-mono text-zinc-300">{s}</p>
+            <p className="text-[9px] text-zinc-600">
+              {count} job{count !== 1 ? "s" : ""}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

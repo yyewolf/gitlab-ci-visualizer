@@ -1,0 +1,65 @@
+export interface PipelineInput {
+  yaml: string;
+  variables: Record<string, string>;
+}
+
+export interface Pipeline {
+  stages: string[];
+  jobs: Job[];
+  edges: Edge[];
+  suggested_branches?: string[];
+  suggested_variables?: string[];
+  error?: string;
+}
+
+export interface Job {
+  name: string;
+  stage: string;
+  enabled: boolean;
+  when: string;
+  allow_failure: boolean;
+  image?: string;
+  needs: string[];
+  has_explicit_needs: boolean;
+  artifacts?: Artifacts;
+  variables?: Record<string, string>;
+  tags?: string[];
+  environment?: string;
+  resource_group?: string;
+  parallel_count?: number;
+  matrix_instances?: MatrixInstance[];
+  rules_trace: RuleTrace[];
+}
+
+export interface Artifacts {
+  paths?: string[];
+  reports?: Record<string, string[]>;
+  expire_in?: string;
+  when?: string;
+}
+
+export interface MatrixInstance {
+  variables: Record<string, string>;
+  name: string;
+}
+
+export interface Edge {
+  from: string;
+  to: string;
+  type: "needs" | "stage";
+}
+
+export interface RuleTrace {
+  rule_index: number;
+  condition?: string;
+  matched: boolean;
+  when?: string;
+}
+
+export interface ConditionState {
+  yaml: string;
+  pipelineSource: string;
+  branch: string;
+  tag: string;
+  extraVars: Array<{ key: string; value: string }>;
+}

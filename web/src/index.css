@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #09090b;
+  color: #e4e4e7;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* React Flow overrides */
+.react-flow__node {
+  border-radius: 0.5rem;
+}

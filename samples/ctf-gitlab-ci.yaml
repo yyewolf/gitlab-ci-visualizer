@@ -1,0 +1,481 @@
+---
+get_unique_semversion:
+  image:
+    name: gittools/gitversion:5.11.1-alpine.3.13-6.0
+    entrypoint:
+    - ''
+  stage: ".pre"
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_DEPTH: 0
+  resource_group: "$CI_COMMIT_REF_SLUG"
+  rules:
+  - if: $GITVERSION_DISABLED == "true"
+    when: never
+  - when: always
+  cache: []
+  before_script: []
+  after_script: []
+  script:
+  - "if [[ \"${CI_COMPONENT_TRACE}\" == \"true\" ]] || [[ -n \"${CI_DEBUG_TRACE}\" ]]; then
+
+    \  echo \"Debugging enabled\"
+
+    \  set -xv
+
+    fi
+
+
+    if [[ ! -z \"$FORCE_RELEASE_VERSION_TO\" ]]; then
+
+    \  echo \"**********************\"
+
+    \  echo \"WARNING FORCE_RELEASE_VERSION_TO variable is set to ==> $FORCE_RELEASE_VERSION_TO <== - release job may ignore the version we generate here and use that one instead.\"
+
+    \  echo \"**********************\"
+
+    fi
+
+
+    if [[ ! -f GitVersion.yml ]]; then
+
+    \  echo \"No GitVersion.yml detected, creating a minimal one to avoid version duplication problems...\"
+
+    \  echo \"mode: Mainline\" | tee -a GitVersion.yml
+
+    fi
+
+
+    if [[ \"${CI_GITVERSION_TRACE}\" == \"true\" ]] || [[ \"${CI_COMPONENT_TRACE}\" == \"true\" ]] || [[ -n \"${CI_DEBUG_TRACE}\" ]]; then
+
+    \  echo \"Tracing is on, showing Gitversion configuration (including settings from defaults)...\"
+
+    \  /tools/dotnet-gitversion /showconfig
+
+    \  VERBOSITYSETTING='/verbosity Diagnostic'
+
+    fi
+
+
+    echo \"running git version and setting version in pipeline variables using dotenv artifacts\"
+
+
+    /tools/dotnet-gitversion /output buildserver $VERBOSITYSETTING
+
+
+    # We could just collect the output file gitversion.properties (with artifacts:report:dotenv: gitversion.properties as it is already in DOTENV format,\ 
+
+    # however it contains ~33 variables which unnecessarily consumes many of the 50 max DOTENV variables of the free GitLab version.
+
+    # Limits are higher for licensed editions, see https://docs.gitlab.com/ee/ci/yaml/artifacts_reports.html#artifactsreportsdotenv
+
+    echo \"***********************************************\"
+
+    echo \"* The will be available as pipeline variables\"
+
+    echo \"* If you would like to see specific versions from the above list added to the GitLab pipeline (below list),\"
+
+    echo \"* please submit an issue at: https://gitlab.com/guided-explorations/ci-components/ultimate-auto-semversioning/-/issues\"
+
+    echo \"$(grep 'GitVersion_LegacySemVer='          gitversion.properties)\" | tee -a thisversion.env
+
+    echo \"$(grep 'GitVersion_SemVer='          gitversion.properties)\" | tee -a thisversion.env
+
+    echo \"$(grep 'GitVersion_FullSemVer='      gitversion.properties)\" | tee -a thisversion.env
+
+    echo \"$(grep 'GitVersion_Major='           gitversion.properties)\" | tee -a thisversion.env
+
+    echo \"$(grep 'GitVersion_Minor='           gitversion.properties)\" | tee -a thisversion.env
+
+    echo \"$(grep 'GitVersion_Patch='           gitversion.properties)\" | tee -a thisversion.env
+
+    echo \"$(grep 'GitVersion_MajorMinorPatch=' gitversion.properties)\" | tee -a thisversion.env\n"
+  artifacts:
+    reports:
+      dotenv:
+      - thisversion.env
+build-container-for-gitlab-registry:
+  image:
+    name: gcr.io/kaniko-project/executor:v1.7.0-debug
+    entrypoint:
+    - ''
+  stage: build
+  variables:
+    KANIKO_CACHE_ARGS: "--cache=true --cache-copy-layers=true --cache-ttl=24h"
+    IMAGE_LABELS: "--label org.opencontainers.image.vendor=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label org.opencontainers.image.authors=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label org.opencontainers.image.revision=$CI_COMMIT_SHA --label org.opencontainers.image.source=$CI_PROJECT_URL --label org.opencontainers.image.documentation=$CI_PROJECT_URL --label org.opencontainers.image.licenses=$CI_PROJECT_URL --label org.opencontainers.image.url=$CI_PROJECT_URL --label vcs-url=$CI_PROJECT_URL --label com.gitlab.ci.user=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label com.gitlab.ci.email=$GITLAB_USER_EMAIL --label com.gitlab.ci.tagorbranch=$CI_COMMIT_REF_NAME --label com.gitlab.ci.pipelineurl=$CI_PIPELINE_URL --label com.gitlab.ci.commiturl=$CI_PROJECT_URL/commit/$CI_COMMIT_SHA --label com.gitlab.ci.cijoburl=$CI_JOB_URL --label com.gitlab.ci.mrurl=$CI_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_ID \ \n"
+    KANIKO_DOCKERFILE: Dockerfile
+  script:
+  - "echo \"If you find this GitLab CI Component useful, please take a moment to add a star to its original source here: https://gitlab.com/guided-explorations/ci-components/kaniko/\"
+
+    if [[ \"${CI_DEBUG_TRACE}\" == \"true\" || \"${CI_COMPONENT_TRACE}\" == \"true\" ]]; then
+
+    \  echo \"CI Component Trace (CI_COMPONENT_TRACE) or GitLab's global trace (CI_DEBUG_TRACE) has been set, debug logging. More info: https://docs.gitlab.com/ee/ci/variables/#enable-debug-logging\"
+
+    \  set -xv
+
+    \  export VERBOSE=1 #makes verbose command
+
+    \  export KANIKO_ARGS=\"${KANIKO_ARGS} --verbosity debug\"
+
+    fi
+
+    echo \"Building and shipping image to $CI_REGISTRY_IMAGE\"
+
+    #Build date for opencontainers
+
+    BUILDDATE=\"'$(date '+%FT%T%z' | sed -E -n 's/(\\+[0-9]{2})([0-9]{2})$/\\1:\\2/p')'\" #rfc 3339 date
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.created=$BUILDDATE --label build-date=$BUILDDATE\"
+
+    #Description for opencontainers
+
+    BUILDTITLE=$(echo $CI_PROJECT_TITLE | tr \" \" \"_\")
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.title=$BUILDTITLE --label org.opencontainers.image.description=$BUILDTITLE\"
+
+    #Add ref.name for opencontainers
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.ref.name=$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME\"
+
+
+    if [[ -n \"$GitVersion_FullSemVer\" ]]; then
+
+    \  #Build Version Label and Tag from git tag, LastVersionTagInGit was placed by a previous job artifact
+
+    \  IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.version=$GitVersion_FullSemVer\"
+
+    \  ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST $GitVersion_FullSemVer\"
+
+    fi
+
+
+    ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST $CI_COMMIT_REF_NAME $CI_COMMIT_SHORT_SHA\"
+
+    if [[ \"$CI_COMMIT_BRANCH\" == \"$CI_DEFAULT_BRANCH\" ]]; then ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST latest\"; fi
+
+
+    echo \"BASETAGSBUILT=$ADDITIONALTAGLIST\" | tee -a basetagsbuilt.env
+
+
+    if [[ -n \"$KANIKO_TAG_SUFFIX\" ]];then
+
+    \  echo \"KANIKO_TAG_SUFFIX is $KANIKO_TAG_SUFFIX, suffixing all these tags: $ADDITIONALTAGLIST\"
+
+    \  ADDITIONALTAGLIST=$(printf \"%s-${KANIKO_TAG_SUFFIX} \" $ADDITIONALTAGLIST)
+
+    \  echo \"Tag list is now: ${ADDITIONALTAGLIST}\"
+
+    \  echo \"${KANIKO_TAG_SUFFIX}_TAGS=${ADDITIONALTAGLIST}\" | tee -a ${KANIKO_TAG_SUFFIX}_tags.env
+
+    fi
+
+
+    if [[ -n \"$ADDITIONALTAGLIST\" ]]; then\ 
+
+    \  for TAG in $ADDITIONALTAGLIST; do\ 
+
+    \    FORMATTEDTAGLIST=\"${FORMATTEDTAGLIST} --tag $CI_REGISTRY_IMAGE:$TAG \";\ 
+
+    \  done;\ 
+
+    fi
+
+
+    #Reformat Docker tags to kaniko's --destination argument:
+
+    FORMATTEDTAGLIST=$(echo \"${FORMATTEDTAGLIST}\" | sed s/\\-\\-tag/\\-\\-destination/g)\ 
+
+
+    echo \"Kaniko arguments to run: --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/${KANIKO_DOCKERFILE} $KANIKO_CACHE_ARGS $FORMATTEDTAGLIST $IMAGE_LABELS\"
+
+    mkdir -p /kaniko/.docker
+
+    echo \"{\\\"auths\\\":{\\\"$CI_REGISTRY\\\":{\\\"auth\\\":\\\"$(echo -n $CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD | base64)\\\"}}}\" > /kaniko/.docker/config.json
+
+    /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/${KANIKO_DOCKERFILE} $KANIKO_CACHE_ARGS $KANIKO_ARGS $FORMATTEDTAGLIST $IMAGE_LABELS\n"
+  artifacts:
+    reports:
+      dotenv:
+      - "*.env"
+  extends: ".build_with_kaniko"
+  rules:
+  - if: "$KANIKO_COMP_DISABLED"
+    when: never
+  - if: '"gitlab" =~ "/.*gitlab.*/"'
+    exists:
+    - "$KANIKO_DOCKERFILE"
+  environment:
+    name: push-to-gitlab-project-registry
+build-container-for-docker-registry:
+  image:
+    name: gcr.io/kaniko-project/executor:v1.7.0-debug
+    entrypoint:
+    - ''
+  stage: build
+  variables:
+    KANIKO_CACHE_ARGS: "--cache=true --cache-copy-layers=true --cache-ttl=24h"
+    IMAGE_LABELS: "--label org.opencontainers.image.vendor=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label org.opencontainers.image.authors=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label org.opencontainers.image.revision=$CI_COMMIT_SHA --label org.opencontainers.image.source=$CI_PROJECT_URL --label org.opencontainers.image.documentation=$CI_PROJECT_URL --label org.opencontainers.image.licenses=$CI_PROJECT_URL --label org.opencontainers.image.url=$CI_PROJECT_URL --label vcs-url=$CI_PROJECT_URL --label com.gitlab.ci.user=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label com.gitlab.ci.email=$GITLAB_USER_EMAIL --label com.gitlab.ci.tagorbranch=$CI_COMMIT_REF_NAME --label com.gitlab.ci.pipelineurl=$CI_PIPELINE_URL --label com.gitlab.ci.commiturl=$CI_PROJECT_URL/commit/$CI_COMMIT_SHA --label com.gitlab.ci.cijoburl=$CI_JOB_URL --label com.gitlab.ci.mrurl=$CI_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_ID \ \n"
+  script:
+  - "echo \"If you find this GitLab CI Component useful, please take a moment to add a star to its original source here: https://gitlab.com/guided-explorations/ci-components/kaniko/\"
+
+    if [[ \"${CI_DEBUG_TRACE}\" == \"true\" || \"${CI_COMPONENT_TRACE}\" == \"true\" ]]; then
+
+    \  echo \"CI Component Trace (CI_COMPONENT_TRACE) or GitLab's global trace (CI_DEBUG_TRACE) has been set, debug logging. More info: https://docs.gitlab.com/ee/ci/variables/#enable-debug-logging\"
+
+    \  set -xv
+
+    \  export VERBOSE=1 #makes verbose command
+
+    \  export KANIKO_ARGS=\"${KANIKO_ARGS} --verbosity debug\"
+
+    fi
+
+    echo \"Building and shipping image to $CI_REGISTRY_IMAGE\"
+
+    #Build date for opencontainers
+
+    BUILDDATE=\"'$(date '+%FT%T%z' | sed -E -n 's/(\\+[0-9]{2})([0-9]{2})$/\\1:\\2/p')'\" #rfc 3339 date
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.created=$BUILDDATE --label build-date=$BUILDDATE\"
+
+    #Description for opencontainers
+
+    BUILDTITLE=$(echo $CI_PROJECT_TITLE | tr \" \" \"_\")
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.title=$BUILDTITLE --label org.opencontainers.image.description=$BUILDTITLE\"
+
+    #Add ref.name for opencontainers
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.ref.name=$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME\"
+
+
+    if [[ -n \"$GitVersion_FullSemVer\" ]]; then
+
+    \  #Build Version Label and Tag from git tag, LastVersionTagInGit was placed by a previous job artifact
+
+    \  IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.version=$GitVersion_FullSemVer\"
+
+    \  ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST $GitVersion_FullSemVer\"
+
+    fi
+
+
+    ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST $CI_COMMIT_REF_NAME $CI_COMMIT_SHORT_SHA\"
+
+    if [[ \"$CI_COMMIT_BRANCH\" == \"$CI_DEFAULT_BRANCH\" ]]; then ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST latest\"; fi
+
+
+    echo \"BASETAGSBUILT=$ADDITIONALTAGLIST\" | tee -a basetagsbuilt.env
+
+
+    if [[ -n \"$KANIKO_TAG_SUFFIX\" ]];then
+
+    \  echo \"KANIKO_TAG_SUFFIX is $KANIKO_TAG_SUFFIX, suffixing all these tags: $ADDITIONALTAGLIST\"
+
+    \  ADDITIONALTAGLIST=$(printf \"%s-${KANIKO_TAG_SUFFIX} \" $ADDITIONALTAGLIST)
+
+    \  echo \"Tag list is now: ${ADDITIONALTAGLIST}\"
+
+    \  echo \"${KANIKO_TAG_SUFFIX}_TAGS=${ADDITIONALTAGLIST}\" | tee -a ${KANIKO_TAG_SUFFIX}_tags.env
+
+    fi
+
+
+    if [[ -n \"$ADDITIONALTAGLIST\" ]]; then\ 
+
+    \  for TAG in $ADDITIONALTAGLIST; do\ 
+
+    \    FORMATTEDTAGLIST=\"${FORMATTEDTAGLIST} --tag $CI_REGISTRY_IMAGE:$TAG \";\ 
+
+    \  done;\ 
+
+    fi
+
+
+    #Reformat Docker tags to kaniko's --destination argument:
+
+    FORMATTEDTAGLIST=$(echo \"${FORMATTEDTAGLIST}\" | sed s/\\-\\-tag/\\-\\-destination/g)\ 
+
+
+    echo \"Kaniko arguments to run: --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/${KANIKO_DOCKERFILE} $KANIKO_CACHE_ARGS $FORMATTEDTAGLIST $IMAGE_LABELS\"
+
+    mkdir -p /kaniko/.docker
+
+    echo \"{\\\"auths\\\":{\\\"$CI_REGISTRY\\\":{\\\"auth\\\":\\\"$(echo -n $CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD | base64)\\\"}}}\" > /kaniko/.docker/config.json
+
+    /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/${KANIKO_DOCKERFILE} $KANIKO_CACHE_ARGS $KANIKO_ARGS $FORMATTEDTAGLIST $IMAGE_LABELS\n"
+  artifacts:
+    reports:
+      dotenv:
+      - "*.env"
+  extends: ".build_with_kaniko"
+  rules:
+  - if: "$KANIKO_COMP_DISABLED"
+    when: never
+  - if: '"gitlab" =~ "/.*dockerhub.*/"'
+    exists:
+    - "$KANIKO_DOCKERFILE"
+  environment:
+    name: push-to-docker-hub
+".build_with_kaniko":
+  image:
+    name: gcr.io/kaniko-project/executor:v1.7.0-debug
+    entrypoint:
+    - ''
+  stage: build
+  variables:
+    KANIKO_CACHE_ARGS: "--cache=true --cache-copy-layers=true --cache-ttl=24h"
+    IMAGE_LABELS: "--label org.opencontainers.image.vendor=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label org.opencontainers.image.authors=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label org.opencontainers.image.revision=$CI_COMMIT_SHA --label org.opencontainers.image.source=$CI_PROJECT_URL --label org.opencontainers.image.documentation=$CI_PROJECT_URL --label org.opencontainers.image.licenses=$CI_PROJECT_URL --label org.opencontainers.image.url=$CI_PROJECT_URL --label vcs-url=$CI_PROJECT_URL --label com.gitlab.ci.user=$CI_SERVER_URL/$GITLAB_USER_LOGIN --label com.gitlab.ci.email=$GITLAB_USER_EMAIL --label com.gitlab.ci.tagorbranch=$CI_COMMIT_REF_NAME --label com.gitlab.ci.pipelineurl=$CI_PIPELINE_URL --label com.gitlab.ci.commiturl=$CI_PROJECT_URL/commit/$CI_COMMIT_SHA --label com.gitlab.ci.cijoburl=$CI_JOB_URL --label com.gitlab.ci.mrurl=$CI_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_ID \ \n"
+  script:
+  - "echo \"If you find this GitLab CI Component useful, please take a moment to add a star to its original source here: https://gitlab.com/guided-explorations/ci-components/kaniko/\"
+
+    if [[ \"${CI_DEBUG_TRACE}\" == \"true\" || \"${CI_COMPONENT_TRACE}\" == \"true\" ]]; then
+
+    \  echo \"CI Component Trace (CI_COMPONENT_TRACE) or GitLab's global trace (CI_DEBUG_TRACE) has been set, debug logging. More info: https://docs.gitlab.com/ee/ci/variables/#enable-debug-logging\"
+
+    \  set -xv
+
+    \  export VERBOSE=1 #makes verbose command
+
+    \  export KANIKO_ARGS=\"${KANIKO_ARGS} --verbosity debug\"
+
+    fi
+
+    echo \"Building and shipping image to $CI_REGISTRY_IMAGE\"
+
+    #Build date for opencontainers
+
+    BUILDDATE=\"'$(date '+%FT%T%z' | sed -E -n 's/(\\+[0-9]{2})([0-9]{2})$/\\1:\\2/p')'\" #rfc 3339 date
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.created=$BUILDDATE --label build-date=$BUILDDATE\"
+
+    #Description for opencontainers
+
+    BUILDTITLE=$(echo $CI_PROJECT_TITLE | tr \" \" \"_\")
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.title=$BUILDTITLE --label org.opencontainers.image.description=$BUILDTITLE\"
+
+    #Add ref.name for opencontainers
+
+    IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.ref.name=$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME\"
+
+
+    if [[ -n \"$GitVersion_FullSemVer\" ]]; then
+
+    \  #Build Version Label and Tag from git tag, LastVersionTagInGit was placed by a previous job artifact
+
+    \  IMAGE_LABELS=\"$IMAGE_LABELS --label org.opencontainers.image.version=$GitVersion_FullSemVer\"
+
+    \  ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST $GitVersion_FullSemVer\"
+
+    fi
+
+
+    ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST $CI_COMMIT_REF_NAME $CI_COMMIT_SHORT_SHA\"
+
+    if [[ \"$CI_COMMIT_BRANCH\" == \"$CI_DEFAULT_BRANCH\" ]]; then ADDITIONALTAGLIST=\"$ADDITIONALTAGLIST latest\"; fi
+
+
+    echo \"BASETAGSBUILT=$ADDITIONALTAGLIST\" | tee -a basetagsbuilt.env
+
+
+    if [[ -n \"$KANIKO_TAG_SUFFIX\" ]];then
+
+    \  echo \"KANIKO_TAG_SUFFIX is $KANIKO_TAG_SUFFIX, suffixing all these tags: $ADDITIONALTAGLIST\"
+
+    \  ADDITIONALTAGLIST=$(printf \"%s-${KANIKO_TAG_SUFFIX} \" $ADDITIONALTAGLIST)
+
+    \  echo \"Tag list is now: ${ADDITIONALTAGLIST}\"
+
+    \  echo \"${KANIKO_TAG_SUFFIX}_TAGS=${ADDITIONALTAGLIST}\" | tee -a ${KANIKO_TAG_SUFFIX}_tags.env
+
+    fi
+
+
+    if [[ -n \"$ADDITIONALTAGLIST\" ]]; then\ 
+
+    \  for TAG in $ADDITIONALTAGLIST; do\ 
+
+    \    FORMATTEDTAGLIST=\"${FORMATTEDTAGLIST} --tag $CI_REGISTRY_IMAGE:$TAG \";\ 
+
+    \  done;\ 
+
+    fi
+
+
+    #Reformat Docker tags to kaniko's --destination argument:
+
+    FORMATTEDTAGLIST=$(echo \"${FORMATTEDTAGLIST}\" | sed s/\\-\\-tag/\\-\\-destination/g)\ 
+
+
+    echo \"Kaniko arguments to run: --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/${KANIKO_DOCKERFILE} $KANIKO_CACHE_ARGS $FORMATTEDTAGLIST $IMAGE_LABELS\"
+
+    mkdir -p /kaniko/.docker
+
+    echo \"{\\\"auths\\\":{\\\"$CI_REGISTRY\\\":{\\\"auth\\\":\\\"$(echo -n $CI_REGISTRY_USER:$CI_REGISTRY_PASSWORD | base64)\\\"}}}\" > /kaniko/.docker/config.json
+
+    /kaniko/executor --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/${KANIKO_DOCKERFILE} $KANIKO_CACHE_ARGS $KANIKO_ARGS $FORMATTEDTAGLIST $IMAGE_LABELS\n"
+  artifacts:
+    reports:
+      dotenv: "*.env"
+manifest-tool-for-multiarch:
+  image:
+    name: curlimages/curl:latest
+    entrypoint:
+    - ''
+  stage: deploy
+  rules:
+  - if: "$KANIKO_COMP_MANIFEST_PLATFORMS"
+  variables:
+    BASETAGSBUILT: "$BASETAGSBUILT"
+  before_script:
+  - curl -s -L https://github.com/estesp/manifest-tool/releases/download/v2.0.8/binaries-manifest-tool-2.0.8.tar.gz | tar xvz
+  - mv manifest-tool-linux-amd64 manifest-tool
+  - chmod +x manifest-tool
+  script:
+  - |-
+    if [[ "${CI_DEBUG_TRACE}" == "true" || "${CI_COMPONENT_TRACE}" == "true" ]]; then
+      echo "CI Component Trace (CI_COMPONENT_TRACE) or GitLab's global trace (CI_DEBUG_TRACE) has been set, debug logging. More info: https://docs.gitlab.com/ee/ci/variables/#enable-debug-logging"
+      set -xv
+    fi
+    ./manifest-tool --username "${CI_REGISTRY_USER}" --password "${CI_REGISTRY_PASSWORD}" push from-args \
+    --platforms ${KANIKO_COMP_MANIFEST_PLATFORMS} \
+    --template ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}-ARCH \
+    --tags $(echo $BASETAGSBUILT | sed 's/ /,/g') \
+    --target ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
+send-to-production:
+  stage: deploy
+  image: alpine:3.20.3
+  before_script:
+  - apk add --no-cache git openssh
+  - git config --global user.email "yyewolf@gmail.com"
+  - git config --global user.name "Gitlab CI"
+  - mkdir -p ~/.ssh
+  - cat "$SSH_KEY" > ~/.ssh/id_ed25519
+  - chmod 600 ~/.ssh/id_ed25519
+  - eval $(ssh-agent -s)
+  - ssh-add ~/.ssh/id_ed25519
+  - ssh-keyscan github.com >> ~/.ssh/known_hosts
+  script:
+  - git clone git@github.com:4T-24/ctf-2024-infra-challenges.git
+  - cd ctf-2024-infra-challenges
+  - RELATIVE_PATH=$(echo "$CI_PROJECT_PATH" | sed 's/^4ts\/ctf-2024\///')
+  - mkdir -p "$RELATIVE_PATH"
+  - cp "$CI_PROJECT_DIR/chall.yaml" "$RELATIVE_PATH/chall.yaml"
+  - git add "$RELATIVE_PATH/chall.yaml"
+  - git commit -m "Deploying chall.yaml to production"
+  - git push
+  only:
+  - tags
+  - master
+test:
+  stage: .post
+  image: alpine:3.20.3
+  needs: []
+  only:
+  - test
+stages:
+- ".pre"
+- build
+- deploy
+- ".post"
