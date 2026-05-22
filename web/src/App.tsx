@@ -6,6 +6,15 @@ import JobDetails from "./components/JobDetails";
 
 const EMPTY_PIPELINE: Pipeline = { stages: [], jobs: [], edges: [] };
 
+// Acquire the VSCode API once at module level — only available inside a webview.
+const vscodeApi = (() => {
+  try {
+    return (window as Window & typeof globalThis & { acquireVsCodeApi?: () => { postMessage: (msg: unknown) => void } }).acquireVsCodeApi?.();
+  } catch {
+    return undefined;
+  }
+})();
+
 const DEFAULT_STATE: ConditionState = {
   yaml: "",
   pipelineSource: "push",
@@ -23,20 +32,36 @@ export default function App() {
   const [showStageEdges, setShowStageEdges] = useState(true);
   const [showDisabled, setShowDisabled] = useState(false);
 
-  // VSCode extension integration: listen for messages from the extension host
+  // VSCode extension integration: listen for messages from the extension host.
+  // Also used by the extension to deliver analysis results.
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const msg = event.data;
       if (msg?.type === "pipeline") {
         setPipeline(msg.data);
         setError(null);
+        setLoading(false);
+      } else if (msg?.type === "error") {
+        setError(msg.data);
+        setPipeline(EMPTY_PIPELINE);
+        setLoading(false);
       } else if (msg?.type === "yaml") {
         setConditions((c) => ({ ...c, yaml: msg.data }));
+        setPendingAnalyze(true);
       }
     };
     window.addEventListener("message", handler);
+    // Tell the extension host we're ready to receive the file.
+    vscodeApi?.postMessage({ type: "ready" });
     return () => window.removeEventListener("message", handler);
   }, []);
+
+  useEffect(() => {
+    if (pendingAnalyze && conditions.yaml) {
+      setPendingAnalyze(false);
+      analyze();
+    }
+  }, [pendingAnalyze, conditions.yaml, analyze]);
 
   useEffect(() => {
     const keys = pipeline.suggested_variables;
@@ -71,6 +96,14 @@ export default function App() {
       variables: buildVars(conditions),
     };
 
+    // In VSCode webview mode, delegate to the extension host via postMessage.
+    // The response arrives through the message listener above (setLoading handled there).
+    if (vscodeApi) {
+      vscodeApi.postMessage({ type: "analyze", payload });
+      return;
+    }
+
+    // Standalone web mode: call the local Go HTTP server.
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -91,18 +124,37 @@ export default function App() {
     }
   }, [conditions, buildVars]);
 
+  const [sidebarOpen, setSidebarOpen] = useState(!vscodeApi);
+  const [pendingAnalyze, setPendingAnalyze] = useState(false);
+
   const enabledCount = pipeline.jobs.filter((j) => j.enabled).length;
   const totalCount = pipeline.jobs.length;
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
-      <ConditionPanel
-        state={conditions}
-        onChange={setConditions}
-        onAnalyze={analyze}
-        loading={loading}
-        suggestedBranches={pipeline.suggested_branches}
-      />
+      {/* Collapsible sidebar */}
+      <div className={`flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out ${sidebarOpen ? "w-64" : "w-0"}`}>
+        <div className="w-64 h-full">
+          <ConditionPanel
+            state={conditions}
+            onChange={setConditions}
+            onAnalyze={analyze}
+            loading={loading}
+            suggestedBranches={pipeline.suggested_branches}
+          />
+        </div>
+      </div>
+
+      {/* Toggle strip */}
+      <button
+        onClick={() => setSidebarOpen((v) => !v)}
+        className={`flex-shrink-0 ${sidebarOpen ? "w-3" : "w-8"} bg-zinc-900 border-x border-zinc-800 hover:bg-zinc-800 flex items-center justify-center cursor-pointer transition-[width,colors] duration-200 group`}
+        title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+      >
+        <span className="text-zinc-600 group-hover:text-zinc-300 text-[11px] select-none transition-colors">
+          {sidebarOpen ? "‹" : "›"}
+        </span>
+      </button>
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* toolbar */}

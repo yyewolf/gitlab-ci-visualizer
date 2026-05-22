@@ -1,0 +1,48 @@
+{
+  "name": "gitlab-ci-visualizer",
+  "publisher": "yyewolf",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yyewolf/gitlab-ci-visualizer"
+  },
+  "displayName": "GitLab CI Visualizer",
+  "description": "Preview and analyze GitLab CI pipelines interactively",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.85.0" },
+  "license": "MIT",
+  "categories": ["Visualization"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitlab-ci-visualizer.preview",
+        "title": "Preview GitLab CI"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "gitlab-ci-visualizer.preview",
+          "when": "resourceExtname == .yml || resourceExtname == .yaml",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "build-web": "cd ../web && npm run build && rm -rf ../vscode/media && cp -r dist ../vscode/media",
+    "build-go": "cd .. && GOOS=linux GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-linux-amd64 ./cmd && GOOS=linux GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-linux-arm64 ./cmd && GOOS=darwin GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-arm64 ./cmd && GOOS=darwin GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-amd64 ./cmd && GOOS=windows GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-windows-amd64.exe ./cmd",
+    "build": "npm run build-web && npm run build-go && npm run compile",
+    "package": "vsce package",
+    "package-all": "bash scripts/package-all.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}
