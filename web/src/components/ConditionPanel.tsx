@@ -59,7 +59,7 @@ export default function ConditionPanel({ state, onChange, onAnalyze, loading, su
   }
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col overflow-hidden">
+    <aside className="w-64 h-full flex-shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-zinc-800">
         <h1 className="text-sm font-semibold text-zinc-100">GitLab CI Visualizer</h1>
       </div>

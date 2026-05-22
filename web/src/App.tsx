@@ -6,7 +6,7 @@ import JobDetails from "./components/JobDetails";
 
 const EMPTY_PIPELINE: Pipeline = { stages: [], jobs: [], edges: [] };
 
-// Acquire the VSCode API once at module level — only available inside a webview.
+// Acquire the VSCode API once at module level - only available inside a webview.
 const vscodeApi = (() => {
   try {
     return (window as Window & typeof globalThis & { acquireVsCodeApi?: () => { postMessage: (msg: unknown) => void } }).acquireVsCodeApi?.();
@@ -46,7 +46,7 @@ export default function App() {
         setPipeline(EMPTY_PIPELINE);
         setLoading(false);
       } else if (msg?.type === "yaml") {
-        setConditions((c) => ({ ...c, yaml: msg.data }));
+        setConditions((c) => ({ ...c, yaml: msg.data, ...(msg.branch ? { branch: msg.branch } : {}) }));
         setPendingAnalyze(true);
       }
     };
@@ -55,13 +55,6 @@ export default function App() {
     vscodeApi?.postMessage({ type: "ready" });
     return () => window.removeEventListener("message", handler);
   }, []);
-
-  useEffect(() => {
-    if (pendingAnalyze && conditions.yaml) {
-      setPendingAnalyze(false);
-      analyze();
-    }
-  }, [pendingAnalyze, conditions.yaml, analyze]);
 
   useEffect(() => {
     const keys = pipeline.suggested_variables;
@@ -124,8 +117,16 @@ export default function App() {
     }
   }, [conditions, buildVars]);
 
-  const [sidebarOpen, setSidebarOpen] = useState(!vscodeApi);
   const [pendingAnalyze, setPendingAnalyze] = useState(false);
+
+  useEffect(() => {
+    if (pendingAnalyze && conditions.yaml) {
+      setPendingAnalyze(false);
+      analyze();
+    }
+  }, [pendingAnalyze, conditions.yaml, analyze]);
+
+  const [sidebarOpen, setSidebarOpen] = useState(!vscodeApi);
 
   const enabledCount = pipeline.jobs.filter((j) => j.enabled).length;
   const totalCount = pipeline.jobs.length;
