@@ -35,17 +35,20 @@ class PreviewPanel {
   private readonly extensionUri: vscode.Uri;
   // YAML captured at command-invocation time, before the webview steals focus.
   private pendingYaml: string | undefined;
+  private watchedUri: vscode.Uri | undefined;
+  private fileWatcher: vscode.Disposable | undefined;
 
   static createOrShow(context: vscode.ExtensionContext) {
     // Capture NOW - activeTextEditor becomes undefined once the webview takes focus.
-    const yaml = vscode.window.activeTextEditor?.document.getText();
-    const column = vscode.window.activeTextEditor
-      ? vscode.ViewColumn.Beside
-      : vscode.ViewColumn.One;
+    const editor = vscode.window.activeTextEditor;
+    const yaml = editor?.document.getText();
+    const uri = editor?.document.uri;
+    const column = editor ? vscode.ViewColumn.Beside : vscode.ViewColumn.One;
 
     if (PreviewPanel.currentPanel) {
       PreviewPanel.currentPanel.panel.reveal(column);
-      if (yaml) {
+      if (yaml && uri) {
+        PreviewPanel.currentPanel.watchedUri = uri;
         PreviewPanel.currentPanel.panel.webview.postMessage({ type: "yaml", data: yaml, branch: getCurrentBranch() });
       }
       return;
@@ -64,22 +67,32 @@ class PreviewPanel {
       }
     );
 
-    PreviewPanel.currentPanel = new PreviewPanel(panel, context.extensionUri, yaml);
+    PreviewPanel.currentPanel = new PreviewPanel(panel, context.extensionUri, yaml, uri);
   }
 
   private constructor(
     panel: vscode.WebviewPanel,
     extensionUri: vscode.Uri,
-    initialYaml: string | undefined
+    initialYaml: string | undefined,
+    initialUri: vscode.Uri | undefined
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.pendingYaml = initialYaml;
+    this.watchedUri = initialUri;
 
     this.update();
 
     this.panel.onDidDispose(() => {
       PreviewPanel.currentPanel = undefined;
+      this.fileWatcher?.dispose();
+    });
+
+    this.fileWatcher = vscode.workspace.onDidSaveTextDocument((doc) => {
+      if (this.watchedUri && doc.uri.toString() === this.watchedUri.toString()) {
+        // No branch field: keeps the user's existing branch/tag/variable params.
+        this.panel.webview.postMessage({ type: "yaml", data: doc.getText() });
+      }
     });
 
     this.panel.webview.onDidReceiveMessage(async (msg) => {

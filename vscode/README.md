@@ -6,6 +6,9 @@ Preview and analyze GitLab CI pipelines directly in VSCode. Open a `.gitlab-ci.y
 
 Open any `.yml` or `.yaml` file, then click the preview button in the editor title bar or run **Preview GitLab CI** from the command palette.
 
+> **Tip: working with `include:` files?**
+> The [GitLab Workflow](https://marketplace.visualstudio.com/items?itemName=GitLab.gitlab-workflow) extension can merge all included files into a single expanded YAML (via **GitLab: Show merged GitLab CI configuration**). Paste that output into a new file and open the preview on it to visualize the full pipeline.
+
 The panel opens beside your file with:
 - your current git branch pre-filled
 - the open file already loaded
