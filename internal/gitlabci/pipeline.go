@@ -267,9 +267,14 @@ func matchRef(ref, branch, tag, source string) bool {
 func computeEdges(jobs []Job, stageIdx map[string]int) []Edge {
 	edges := []Edge{}
 
-	// Build: stageIndex → []job names with that stage
+	// Build: stageIndex → []enabled job names with that stage.
+	// Disabled jobs are excluded so that a stage where all jobs are disabled is
+	// treated as empty, letting the backward search reach the last non-empty stage.
 	stageJobs := make(map[int][]string)
 	for _, j := range jobs {
+		if !j.Enabled {
+			continue
+		}
 		if idx, ok := stageIdx[j.Stage]; ok {
 			stageJobs[idx] = append(stageJobs[idx], j.Name)
 		}
