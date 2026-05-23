@@ -1,0 +1,25 @@
+when:
+  event: [push, pull_request]
+
+steps:
+  - name: go-lint
+    image: golangci/golangci-lint:latest
+    commands:
+      - golangci-lint run ./...
+
+  - name: go-test
+    image: golang:latest
+    commands:
+      - go test ./...
+
+  - name: web-build
+    image: node:22-alpine
+    commands:
+      - npm --prefix web ci
+      - npm --prefix web run build
+
+  - name: vscode-typecheck
+    image: node:22-alpine
+    commands:
+      - npm --prefix vscode ci
+      - cd vscode && ./node_modules/.bin/tsc --noEmit

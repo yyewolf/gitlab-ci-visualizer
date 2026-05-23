@@ -1,0 +1,32 @@
+when:
+  event: tag
+
+steps:
+- name: build-frontend
+  image: node:22-alpine
+  commands:
+  - npm --prefix web ci
+  - npm --prefix vscode ci
+  - npm --prefix vscode run build-web
+  - npm --prefix vscode run compile
+
+- name: build-binaries
+  image: golang:latest
+  commands:
+  - mkdir -p vscode/bin
+  - CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-linux-amd64       ./cmd
+  - CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-linux-arm64       ./cmd
+  - CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-amd64      ./cmd
+  - CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-arm64      ./cmd
+  - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-windows-amd64.exe ./cmd
+
+- name: package-and-publish
+  image: node:22-alpine
+  environment:
+    VSCE_PAT:
+      from_secret: VSCODE_PUBLISH_TOKEN
+  commands:
+  - VERSION=$(echo "$CI_COMMIT_TAG" | sed 's/^v//')
+  - npm --prefix vscode version "$VERSION" --no-git-tag-version
+  - npm --prefix vscode run package
+  - vscode/node_modules/.bin/vsce publish --packagePath "vscode/gitlab-ci-visualizer-$VERSION.vsix"
