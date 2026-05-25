@@ -196,6 +196,15 @@ export default function App() {
           </div>
         </div>
 
+        {/* warnings */}
+        {pipeline.warnings && pipeline.warnings.length > 0 && (
+          <div className="px-4 py-2 bg-amber-950/60 border-b border-amber-800/60 flex flex-col gap-0.5">
+            {pipeline.warnings.map((w, i) => (
+              <p key={i} className="text-amber-400 text-xs">⚠ {w}</p>
+            ))}
+          </div>
+        )}
+
         {/* main area */}
         <div className="flex-1 flex overflow-hidden relative">
           {error ? (

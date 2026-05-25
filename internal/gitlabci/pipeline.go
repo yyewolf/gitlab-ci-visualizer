@@ -37,6 +37,24 @@ func Analyze(input Input) (*Output, error) {
 		jobs = append(jobs, j)
 	}
 
+	// A job with no stage: defaults to "test", which may not be in the declared
+	// stages list. Insert any missing stages before .post so the graph renders them
+	// in a real column rather than overlapping with .pre (column 0 fallback).
+	var warnings []string
+	for _, j := range jobs {
+		if _, ok := stageIdx[j.Stage]; !ok {
+			warnings = append(warnings, fmt.Sprintf("job %q references stage %q which is not defined in stages", j.Name, j.Stage))
+			insert := len(ci.stages) - 1
+			if insert < 0 {
+				insert = 0
+			}
+			ci.stages = append(ci.stages[:insert:insert], append([]string{j.Stage}, ci.stages[insert:]...)...)
+			for i, s := range ci.stages {
+				stageIdx[s] = i
+			}
+		}
+	}
+
 	sort.Slice(jobs, func(i, k int) bool {
 		si, sk := stageIdx[jobs[i].Stage], stageIdx[jobs[k].Stage]
 		if si != sk {
@@ -60,11 +78,12 @@ func Analyze(input Input) (*Output, error) {
 	}
 
 	return &Output{
-		Stages:            ci.stages,
-		Jobs:              jobs,
-		Edges:             computeEdges(jobs, stageIdx),
+		Stages:             ci.stages,
+		Jobs:               jobs,
+		Edges:              computeEdges(jobs, stageIdx),
 		SuggestedBranches:  extractSuggestedBranches(ci),
 		SuggestedVariables: extractSuggestedVariables(ci),
+		Warnings:           warnings,
 	}, nil
 }
 

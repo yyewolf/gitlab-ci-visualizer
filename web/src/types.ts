@@ -9,6 +9,7 @@ export interface Pipeline {
   edges: Edge[];
   suggested_branches?: string[];
   suggested_variables?: string[];
+  warnings?: string[];
   error?: string;
 }
 

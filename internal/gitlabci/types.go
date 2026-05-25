@@ -8,12 +8,13 @@ type Input struct {
 
 // Output is the JSON written to stdout.
 type Output struct {
-	Stages            []string `json:"stages"`
-	Jobs              []Job    `json:"jobs"`
-	Edges             []Edge   `json:"edges"`
-	SuggestedBranches   []string `json:"suggested_branches,omitempty"`
-	SuggestedVariables  []string `json:"suggested_variables,omitempty"`
-	Error             string   `json:"error,omitempty"`
+	Stages             []string `json:"stages"`
+	Jobs               []Job    `json:"jobs"`
+	Edges              []Edge   `json:"edges"`
+	SuggestedBranches  []string `json:"suggested_branches,omitempty"`
+	SuggestedVariables []string `json:"suggested_variables,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
+	Error              string   `json:"error,omitempty"`
 }
 
 // Job is a resolved, analysed CI job.

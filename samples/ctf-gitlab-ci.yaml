@@ -469,10 +469,9 @@ send-to-production:
   - tags
   - master
 test:
-  stage: .post
   image: alpine:3.20.3
-  only:
-  - test
+test2:
+  image: alpine:3.20.3
 stages:
 - ".pre"
 - build
