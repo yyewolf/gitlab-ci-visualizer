@@ -3,7 +3,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   type Node,
   type Edge as FlowEdge,
   type NodeMouseHandler,
@@ -135,22 +134,6 @@ export default function PipelineGraph({
       >
         <Background color="#27272a" gap={20} />
         <Controls className="!bg-zinc-900 !border-zinc-700 [&>button]:!bg-zinc-900 [&>button]:!border-zinc-700 [&>button]:!text-zinc-400 [&>button:hover]:!bg-zinc-800" />
-        <MiniMap
-          className="!bg-zinc-900 !border-zinc-700"
-          nodeColor={(n) => {
-            const d = n.data as JobNodeData;
-            if (!d.job.enabled) return "#52525b";
-            const colors: Record<string, string> = {
-              on_success: "#10b981",
-              always: "#3b82f6",
-              manual: "#f59e0b",
-              on_failure: "#f97316",
-              never: "#52525b",
-            };
-            return colors[d.job.when] ?? "#10b981";
-          }}
-          maskColor="rgba(0,0,0,0.6)"
-        />
       </ReactFlow>
 
       {visibleStages.length > 0 && (
