@@ -38,7 +38,7 @@ steps:
   - vscode/node_modules/.bin/vsce publish --packagePath "vscode/gitlab-ci-visualizer-$VERSION.vsix"
 
 - name: github-release
-  image: registry.yewolf.fr/wrapper/wrap/nixery.dev/shell/goreleaser/latest/with/ghcr.io/yyewolf/woodpecker-plugins/github-token-wrapper/latest:latest
+  image: registry.yewolf.fr/wrapper/wrap/nixery.dev/shell/git/goreleaser/latest/with/ghcr.io/yyewolf/woodpecker-plugins/github-token-wrapper/latest:latest
   environment:
     PLUGIN_MTLS_SERVICE_URL: https://github-token-svc:8443/token
     PLUGIN_MTLS_CA_CERT:
@@ -49,7 +49,7 @@ steps:
       from_secret: MTLS_CLIENT_KEY
     PLUGIN_OUTPUT_TO: GITHUB_TOKEN
   commands:
-  - goreleaser release --clean
+  - /wrapper goreleaser release --clean
 
 services:
 - name: github-token-svc
