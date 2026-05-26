@@ -24,6 +24,7 @@ type Job struct {
 	Enabled          bool              `json:"enabled"`
 	When             string            `json:"when"`
 	AllowFailure     bool              `json:"allow_failure"`
+	Interruptible    bool              `json:"interruptible"`
 	Image            string            `json:"image,omitempty"`
 	Needs            []string          `json:"needs"`
 	HasExplicitNeeds bool              `json:"has_explicit_needs"`

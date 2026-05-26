@@ -19,6 +19,7 @@ export interface Job {
   enabled: boolean;
   when: string;
   allow_failure: boolean;
+  interruptible: boolean;
   image?: string;
   needs: string[];
   has_explicit_needs: boolean;

@@ -30,6 +30,7 @@ export default function JobDetails({ job, onClose }: Props) {
           <Row label="Enabled">{job.enabled ? "✓ yes" : "✗ no"}</Row>
           <Row label="When">{job.when}</Row>
           {job.allow_failure && <Row label="Allow failure">yes</Row>}
+          {job.interruptible && <Row label="Interruptible">yes</Row>}
           {job.image && <Row label="Image">{job.image}</Row>}
           {job.environment && <Row label="Environment">{job.environment}</Row>}
           {job.resource_group && <Row label="Resource group">{job.resource_group}</Row>}
