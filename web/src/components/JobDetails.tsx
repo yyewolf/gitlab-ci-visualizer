@@ -67,7 +67,7 @@ export default function JobDetails({ job, onClose }: Props) {
               Object.entries(job.artifacts.reports).map(([type, paths]) => (
                 <div key={type} className="mt-1">
                   <p className="text-zinc-500">report: {type}</p>
-                  {paths.map((p) => (
+                  {paths && paths.map((p) => (
                     <p key={p} className="font-mono text-zinc-300 ml-2">{p}</p>
                   ))}
                 </div>
