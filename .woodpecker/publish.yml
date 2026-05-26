@@ -8,10 +8,32 @@ clone:
       partial: false
 
 steps:
-- name: build-frontend
+# Build web only — web/dist is gitignored so the tree stays clean for goreleaser.
+- name: build-web
   image: node:22-alpine
   commands:
   - npm --prefix web ci
+  - npm --prefix web run build
+
+# Run goreleaser while the tree is still clean.
+- name: github-release
+  image: registry.yewolf.fr/wrapper/wrap/nixery.dev/shell/git/go/goreleaser/latest/with/ghcr.io/yyewolf/woodpecker-plugins/github-token-wrapper/latest:latest
+  environment:
+    PLUGIN_MTLS_SERVICE_URL: https://github-token-svc:8443/token
+    PLUGIN_MTLS_CA_CERT:
+      from_secret: MTLS_CA_CERT
+    PLUGIN_MTLS_CLIENT_CERT:
+      from_secret: MTLS_CLIENT_CERT
+    PLUGIN_MTLS_CLIENT_KEY:
+      from_secret: MTLS_CLIENT_KEY
+    PLUGIN_OUTPUT_TO: GITHUB_TOKEN
+  commands:
+  - /wrapper goreleaser release --clean
+
+# VSCode extension steps run after goreleaser; they dirty the tree but that's fine.
+- name: build-vscode
+  image: node:22-alpine
+  commands:
   - npm --prefix vscode ci
   - npm --prefix vscode run build-web
   - npm --prefix vscode run compile
@@ -36,20 +58,6 @@ steps:
   - npm --prefix vscode version "$VERSION" --no-git-tag-version
   - npm --prefix vscode run package
   - vscode/node_modules/.bin/vsce publish --packagePath "vscode/gitlab-ci-visualizer-$VERSION.vsix"
-
-- name: github-release
-  image: registry.yewolf.fr/wrapper/wrap/nixery.dev/shell/goreleaser/latest/with/ghcr.io/yyewolf/woodpecker-plugins/github-token-wrapper/latest:latest
-  environment:
-    PLUGIN_MTLS_SERVICE_URL: https://github-token-svc:8443/token
-    PLUGIN_MTLS_CA_CERT:
-      from_secret: MTLS_CA_CERT
-    PLUGIN_MTLS_CLIENT_CERT:
-      from_secret: MTLS_CLIENT_CERT
-    PLUGIN_MTLS_CLIENT_KEY:
-      from_secret: MTLS_CLIENT_KEY
-    PLUGIN_OUTPUT_TO: GITHUB_TOKEN
-  commands:
-  - goreleaser release --clean
 
 services:
 - name: github-token-svc

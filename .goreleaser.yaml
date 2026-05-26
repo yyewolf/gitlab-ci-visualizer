@@ -4,37 +4,37 @@ project_name: gitlab-ci-visualizer
 
 before:
   hooks:
-    - go mod tidy
+  - go mod tidy
 
 builds:
-  - id: gitlab-ci-visualizer
-    main: .
-    binary: gitlab-ci-visualizer
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
-    ldflags:
-      - -s -w
+- id: gitlab-ci-visualizer
+  main: .
+  binary: gitlab-ci-visualizer
+  env:
+  - CGO_ENABLED=0
+  goos:
+  - linux
+  - darwin
+  - windows
+  goarch:
+  - amd64
+  - arm64
+  ignore:
+  - goos: windows
+    goarch: arm64
+  ldflags:
+  - -s -w
 
 archives:
-  - id: default
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
-    files:
-      - README.md
-      - LICENSE
+- id: default
+  name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  format_overrides:
+  - goos: windows
+    formats:
+    - zip
+  files:
+  - README.md
+  - LICENSE
 
 checksum:
   name_template: checksums.txt
