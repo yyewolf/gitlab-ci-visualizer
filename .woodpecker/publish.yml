@@ -47,7 +47,7 @@ steps:
       from_secret: MTLS_CLIENT_CERT
     PLUGIN_MTLS_CLIENT_KEY:
       from_secret: MTLS_CLIENT_KEY
-    PLUGIN_OUTPUT_TO: GITHUB_TOKEN
+    PLUGIN_OUTPUT_TO: GITHUB_T
   commands:
   - goreleaser release --clean
 
