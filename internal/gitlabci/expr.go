@@ -40,12 +40,6 @@ type lexer struct {
 
 func newLexer(s string) *lexer { return &lexer{in: []rune(strings.TrimSpace(s))} }
 
-func (l *lexer) peek() rune {
-	if l.pos >= len(l.in) {
-		return 0
-	}
-	return l.in[l.pos]
-}
 
 func (l *lexer) skipWS() {
 	for l.pos < len(l.in) && unicode.IsSpace(l.in[l.pos]) {

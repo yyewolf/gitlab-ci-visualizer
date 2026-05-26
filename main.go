@@ -82,7 +82,9 @@ func runServer(addr string) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			log.Printf("encode response: %v", err)
+		}
 	})
 
 	// Frontend (SPA).
