@@ -1,10 +1,12 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -12,8 +14,11 @@ import (
 	"github.com/yyewolf/gitlab-ci-visualizer/internal/gitlabci"
 )
 
+//go:embed web/dist
+var webFS embed.FS
+
 func main() {
-	serve := flag.String("serve", "", "serve HTTP API on this address (e.g. :3001)")
+	serve := flag.String("serve", "", "address to listen on (e.g. :3001)")
 	flag.Parse()
 
 	if *serve != "" {
@@ -21,6 +26,7 @@ func main() {
 		return
 	}
 
+	// Stdin/stdout protocol — used by the VSCode extension.
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fatal(err)
@@ -49,7 +55,7 @@ func fatal(err error) {
 func runServer(addr string) {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/analyze", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/analyze", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -79,8 +85,12 @@ func runServer(addr string) {
 		json.NewEncoder(w).Encode(result)
 	})
 
-	// Serve sample YAML files from ./samples/
-	mux.Handle("/samples/", http.StripPrefix("/samples/", http.FileServer(http.Dir("samples"))))
+	// Frontend (SPA).
+	distSub, err := fs.Sub(webFS, "web/dist")
+	if err != nil {
+		log.Fatalf("web/dist embed: %v", err)
+	}
+	mux.Handle("/", http.FileServer(http.FS(distSub)))
 
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))

@@ -13,7 +13,8 @@ Takes a `.gitlab-ci.yml`, evaluates which jobs run under given conditions (branc
 ## Architecture
 
 ```
-cmd/main.go              — binary entry point (stdin/stdout JSON protocol or -serve HTTP)
+main.go                  — binary entry point (stdin/stdout JSON protocol or -serve HTTP)
+                           embeds web/dist and samples via //go:embed
 internal/gitlabci/
   parser.go              — YAML → parsedCI (stages, variables, jobs map)
   pipeline.go            — parsedCI → Output (job resolution, rule eval, edge computation)
@@ -28,13 +29,23 @@ web/src/
     JobDetails.tsx       — right-side panel shown when a job is selected
     ConditionPanel.tsx   — left-side inputs (branch, source, variables)
 vscode/src/extension.ts  — VSCode extension: spawns the Go binary, manages the webview
+.goreleaser.yaml         — goreleaser config for GitHub releases
 ```
 
 ### Data flow
 
-1. User sets conditions (branch, pipeline source, variables) → frontend sends `PipelineInput` JSON to the Go binary via stdin (or HTTP POST `/analyze`).
+1. User sets conditions (branch, pipeline source, variables) → frontend sends `PipelineInput` JSON to the Go binary via stdin (or HTTP POST `/api/analyze`).
 2. Go binary: `parser.go` unmarshals the YAML, `pipeline.go` resolves jobs and emits `Output` JSON to stdout.
 3. Frontend receives `Output` (stages, jobs, edges, suggestions, warnings) and renders the graph.
+
+### Standalone binary mode (`-serve`)
+
+The binary embeds `web/dist` and `samples` at compile time. Running `gitlab-ci-visualizer -serve :3001` serves:
+- `GET /` — embedded React SPA
+- `POST /api/analyze` — analysis endpoint
+- `GET /samples/*` — embedded sample YAML files
+
+The frontend calls `/api/analyze` in both dev (Vite proxies it) and production.
 
 ---
 
@@ -66,15 +77,39 @@ Handles `rules:if` expressions: `==`, `!=`, `=~`, `!~`, `&&`, `||`, null checks,
 ## Build
 
 ```bash
-# Go binary only
-go build ./cmd
+# Frontend must be built first (embeds into the Go binary)
+cd web && npm install && npm run build && cd ..
 
-# Frontend
-cd web && npm install && npm run build
+# Go binary (embeds web/dist at compile time)
+go build -o gitlab-ci-visualizer .
 
-# VSCode extension (bundles Go binaries for all platforms)
+# Run the standalone web app
+./gitlab-ci-visualizer -serve :3001
+
+# VSCode extension (builds Go binaries for all platforms + bundles)
 cd vscode && npm install && npm run build && npm run package-all
 ```
+
+### Dev mode (hot reload)
+
+```bash
+# Terminal 1 — Go API server
+go run . -serve :3002
+
+# Terminal 2 — Vite dev server (proxies /api and /samples to :3002)
+cd web && npm run dev
+```
+
+### Release
+
+Build the frontend first, then run goreleaser (from your CI or locally):
+
+```bash
+npm --prefix web ci && npm --prefix web run build
+GITHUB_TOKEN=... goreleaser release --clean
+```
+
+Goreleaser cross-compiles for linux/darwin/windows (amd64 + arm64) and publishes a GitHub release with archives and a `checksums.txt`.
 
 Tests:
 

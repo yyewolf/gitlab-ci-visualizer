@@ -1,6 +1,12 @@
 when:
   event: tag
 
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    settings:
+      partial: false
+
 steps:
 - name: build-frontend
   image: node:22-alpine
@@ -14,11 +20,11 @@ steps:
   image: golang:latest
   commands:
   - mkdir -p vscode/bin
-  - CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-linux-amd64       ./cmd
-  - CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-linux-arm64       ./cmd
-  - CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-amd64      ./cmd
-  - CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-arm64      ./cmd
-  - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-windows-amd64.exe ./cmd
+  - CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-linux-amd64       .
+  - CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-linux-arm64       .
+  - CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-amd64      .
+  - CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-arm64      .
+  - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-windows-amd64.exe .
 
 - name: package-and-publish
   image: node:22-alpine
@@ -30,3 +36,36 @@ steps:
   - npm --prefix vscode version "$VERSION" --no-git-tag-version
   - npm --prefix vscode run package
   - vscode/node_modules/.bin/vsce publish --packagePath "vscode/gitlab-ci-visualizer-$VERSION.vsix"
+
+- name: github-release
+  image: registry.yewolf.fr/wrapper/wrap/nixery.dev/shell/goreleaser/latest/with/ghcr.io/yyewolf/woodpecker-plugins/github-token-wrapper/latest:latest
+  environment:
+    PLUGIN_MTLS_SERVICE_URL: https://github-token-svc:8443/token
+    PLUGIN_MTLS_CA_CERT:
+      from_secret: MTLS_CA_CERT
+    PLUGIN_MTLS_CLIENT_CERT:
+      from_secret: MTLS_CLIENT_CERT
+    PLUGIN_MTLS_CLIENT_KEY:
+      from_secret: MTLS_CLIENT_KEY
+    PLUGIN_OUTPUT_TO: GITHUB_TOKEN
+  commands:
+  - goreleaser release --clean
+
+services:
+- name: github-token-svc
+  image: ghcr.io/yyewolf/woodpecker-plugins/github-app-token-svc
+  ports:
+  - 8443
+  settings:
+    github_app_id:
+      from_secret: GITHUB_APP_ID
+    github_installation_id:
+      from_secret: GITHUB_INSTALL_ID
+    github_private_key_pem:
+      from_secret: GITHUB_APP_PEM
+    mtls_ca_cert:
+      from_secret: MTLS_CA_CERT
+    mtls_server_cert:
+      from_secret: MTLS_SERVER_CERT
+    mtls_server_key:
+      from_secret: MTLS_SERVER_KEY
