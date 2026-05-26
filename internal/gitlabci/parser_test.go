@@ -105,3 +105,91 @@ func TestExtractNeeds(t *testing.T) {
 		})
 	}
 }
+
+func TestEvalRulesBlock(t *testing.T) {
+	tests := map[string]struct {
+		rawRules interface{}
+		vars     map[string]string
+		wantWhen string
+		wantEn   bool
+	}{
+		"nil rules": {
+			rawRules: nil,
+			vars:     map[string]string{},
+			wantWhen: "on_success",
+			wantEn:   true,
+		},
+		"flat rules - first matches": {
+			rawRules: []interface{}{
+				map[string]interface{}{"if": "$CI_COMMIT_TAG", "when": "on_success"},
+			},
+			vars:     map[string]string{"CI_COMMIT_TAG": "v1.0"},
+			wantWhen: "on_success",
+			wantEn:   true,
+		},
+		"flat rules - first no match, second matches": {
+			rawRules: []interface{}{
+				map[string]interface{}{"if": "$CI_COMMIT_TAG", "when": "on_success"},
+				map[string]interface{}{"if": "$CI_COMMIT_BRANCH", "when": "on_success"},
+			},
+			vars:     map[string]string{"CI_COMMIT_BRANCH": "main"},
+			wantWhen: "on_success",
+			wantEn:   true,
+		},
+		"flat rules - when never": {
+			rawRules: []interface{}{
+				map[string]interface{}{"if": "$CI_COMMIT_TAG", "when": "never"},
+			},
+			vars:     map[string]string{"CI_COMMIT_TAG": "v1.0"},
+			wantWhen: "never",
+			wantEn:   false,
+		},
+		"nested array rules - should be flattened": {
+			rawRules: []interface{}{
+				[]interface{}{
+					map[string]interface{}{"if": "$CI_COMMIT_TAG"},
+				},
+				[]interface{}{
+					map[string]interface{}{"if": "$CI_PIPELINE_SOURCE == \"schedule\"", "when": "never"},
+				},
+				[]interface{}{
+					map[string]interface{}{"if": "$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS", "when": "never"},
+				},
+				[]interface{}{
+					map[string]interface{}{"if": "$CI_COMMIT_BRANCH"},
+				},
+				[]interface{}{
+					map[string]interface{}{"if": "$CI_PIPELINE_SOURCE"},
+				},
+			},
+			vars:     map[string]string{"CI_COMMIT_BRANCH": "main", "CI_OPEN_MERGE_REQUESTS": ""},
+			wantWhen: "on_success",
+			wantEn:   true,
+		},
+		"nested array rules - matches when never": {
+			rawRules: []interface{}{
+				[]interface{}{
+					map[string]interface{}{"if": "$CI_COMMIT_TAG"},
+				},
+				[]interface{}{
+					map[string]interface{}{"if": "$CI_PIPELINE_SOURCE == \"schedule\"", "when": "never"},
+				},
+			},
+			vars:     map[string]string{"CI_PIPELINE_SOURCE": "schedule"},
+			wantWhen: "never",
+			wantEn:   false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			when, enabled, _ := evalRulesBlock(tt.rawRules, tt.vars)
+			if when != tt.wantWhen {
+				t.Errorf("evalRulesBlock() when = %v, want %v", when, tt.wantWhen)
+			}
+			if enabled != tt.wantEn {
+				t.Errorf("evalRulesBlock() enabled = %v, want %v", enabled, tt.wantEn)
+			}
+		})
+	}
+}

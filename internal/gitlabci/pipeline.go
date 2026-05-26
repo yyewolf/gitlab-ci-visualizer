@@ -171,8 +171,27 @@ func evalRulesBlock(rulesRaw interface{}, vars map[string]string) (string, bool,
 		return "on_success", true, nil
 	}
 
+	flat := make([]interface{}, 0, len(list))
+	var flatten func(interface{})
+	flatten = func(val interface{}) {
+		switch v := val.(type) {
+		case []interface{}:
+			for _, item := range v {
+				flatten(item)
+			}
+		case map[string]interface{}:
+			flat = append(flat, v)
+		}
+	}
+	for _, item := range list {
+		flatten(item)
+	}
+	if len(flat) == 0 {
+		return "on_success", true, nil
+	}
+
 	var trace []RuleTrace
-	for i, item := range list {
+	for i, item := range flat {
 		m, ok := item.(map[string]interface{})
 		if !ok {
 			continue
