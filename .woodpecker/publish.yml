@@ -49,7 +49,7 @@ steps:
       from_secret: MTLS_CLIENT_KEY
     PLUGIN_OUTPUT_TO: GITHUB_TOKEN
   commands:
-  - goreleaser release --clean
+  - /wrapper goreleaser release --clean
 
 services:
 - name: github-token-svc
