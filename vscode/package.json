@@ -17,7 +17,17 @@
     "commands": [
       {
         "command": "gitlab-ci-visualizer.preview",
-        "title": "Preview GitLab CI"
+        "title": "Preview GitLab CI",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "gitlab-ci-visualizer.previewWithGitlab",
+        "title": "Preview GitLab CI (resolved)",
+        "icon": "$(cloud)"
+      },
+      {
+        "command": "gitlab-ci-visualizer.configureGitlab",
+        "title": "GitLab CI: Configure Authentication"
       }
     ],
     "menus": {
@@ -25,9 +35,24 @@
         {
           "command": "gitlab-ci-visualizer.preview",
           "when": "resourceExtname == .yml || resourceExtname == .yaml",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitlab-ci-visualizer.previewWithGitlab",
+          "when": "resourceExtname == .yml || resourceExtname == .yaml",
+          "group": "navigation@2"
         }
       ]
+    },
+    "configuration": {
+      "title": "GitLab CI Visualizer",
+      "properties": {
+        "gitlab-ci-visualizer.gitlabUrl": {
+          "type": "string",
+          "default": "https://gitlab.com",
+          "description": "Base URL of your GitLab instance."
+        }
+      }
     }
   },
   "scripts": {

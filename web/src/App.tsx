@@ -31,6 +31,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [showStageEdges, setShowStageEdges] = useState(true);
   const [showDisabled, setShowDisabled] = useState(false);
+  // Tracks whether the last triggered analysis used GitLab resolution.
+  // Live-regen on file save will re-use this mode automatically.
+  const [gitlabMode, setGitlabMode] = useState(false);
 
   // VSCode extension integration: listen for messages from the extension host.
   // Also used by the extension to deliver analysis results.
@@ -47,6 +50,9 @@ export default function App() {
         setLoading(false);
       } else if (msg?.type === "yaml") {
         setConditions((c) => ({ ...c, yaml: msg.data, ...(msg.branch ? { branch: msg.branch } : {}) }));
+        if (msg.useGitlab !== undefined) {
+          setGitlabMode(!!msg.useGitlab);
+        }
         setPendingAnalyze(true);
       }
     };
@@ -117,14 +123,57 @@ export default function App() {
     }
   }, [conditions, buildVars]);
 
+  // Sends the YAML to the extension host for GitLab-resolved analysis.
+  // Only meaningful inside a VS Code webview; standalone mode falls back to local.
+  const analyzeWithGitlab = useCallback(async () => {
+    if (!conditions.yaml) return;
+    setLoading(true);
+    setError(null);
+    setSelectedJob(null);
+
+    const payload: PipelineInput = {
+      yaml: conditions.yaml,
+      variables: buildVars(conditions),
+    };
+
+    if (vscodeApi) {
+      vscodeApi.postMessage({ type: "analyze-with-gitlab", payload });
+      return;
+    }
+
+    // Standalone web mode has no GitLab proxy — fall back to local analysis.
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data: Pipeline = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setPipeline(EMPTY_PIPELINE);
+      } else {
+        setPipeline(data);
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [conditions, buildVars]);
+
   const [pendingAnalyze, setPendingAnalyze] = useState(false);
 
   useEffect(() => {
     if (pendingAnalyze && conditions.yaml) {
       setPendingAnalyze(false);
-      analyze();
+      if (gitlabMode) {
+        analyzeWithGitlab();
+      } else {
+        analyze();
+      }
     }
-  }, [pendingAnalyze, conditions.yaml, analyze]);
+  }, [pendingAnalyze, conditions.yaml, analyze, analyzeWithGitlab, gitlabMode]);
 
   const [sidebarOpen, setSidebarOpen] = useState(!vscodeApi);
 
