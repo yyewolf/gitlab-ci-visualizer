@@ -141,7 +141,7 @@ export default function App() {
       return;
     }
 
-    // Standalone web mode has no GitLab proxy — fall back to local analysis.
+    // Standalone web mode has no GitLab proxy - fall back to local analysis.
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
@@ -181,7 +181,7 @@ export default function App() {
   const totalCount = pipeline.jobs.length;
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100">
       {/* Collapsible sidebar */}
       <div className={`flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out ${sidebarOpen ? "w-64" : "w-0"}`}>
         <div className="w-64 h-full">
@@ -206,13 +206,13 @@ export default function App() {
         </span>
       </button>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex flex-col flex-1 overflow-hidden">
         {/* toolbar */}
-        <div className="flex items-center gap-4 px-4 py-2 border-b border-zinc-800 bg-zinc-900 text-xs">
+        <div className="flex items-center gap-4 px-4 py-2 text-xs border-b border-zinc-800 bg-zinc-900">
           {totalCount > 0 && (
             <>
               <span className="text-zinc-400">
-                <span className="text-emerald-400 font-medium">{enabledCount}</span>
+                <span className="font-medium text-emerald-400">{enabledCount}</span>
                 <span className="text-zinc-600"> / {totalCount} jobs enabled</span>
               </span>
               <span className="text-zinc-700">·</span>
@@ -223,7 +223,7 @@ export default function App() {
               </span>
             </>
           )}
-          <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-3 ml-auto">
             <label className="flex items-center gap-1.5 text-zinc-500 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -249,18 +249,18 @@ export default function App() {
         {pipeline.warnings && pipeline.warnings.length > 0 && (
           <div className="px-4 py-2 bg-amber-950/60 border-b border-amber-800/60 flex flex-col gap-0.5">
             {pipeline.warnings.map((w, i) => (
-              <p key={i} className="text-amber-400 text-xs">⚠ {w}</p>
+              <p key={i} className="text-xs text-amber-400">⚠ {w}</p>
             ))}
           </div>
         )}
 
         {/* main area */}
-        <div className="flex-1 flex overflow-hidden relative">
+        <div className="relative flex flex-1 overflow-hidden">
           {error ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="bg-red-950 border border-red-800 rounded-lg p-6 max-w-lg">
-                <p className="text-red-400 text-sm font-medium mb-2">Parse error</p>
-                <pre className="text-red-300 text-xs whitespace-pre-wrap">{error}</pre>
+            <div className="flex items-center justify-center flex-1">
+              <div className="max-w-lg p-6 border border-red-800 rounded-lg bg-red-950">
+                <p className="mb-2 text-sm font-medium text-red-400">Parse error</p>
+                <pre className="text-xs text-red-300 whitespace-pre-wrap">{error}</pre>
               </div>
             </div>
           ) : pipeline.jobs.length === 0 ? (
@@ -286,16 +286,16 @@ export default function App() {
 
 function NoJobsState({ onShowDisabled }: { onShowDisabled: () => void }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3">
+    <div className="flex flex-col items-center justify-center flex-1 gap-3">
       <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
         <circle cx="24" cy="24" r="18" stroke="#52525b" strokeWidth="1.5" />
         <line x1="24" y1="14" x2="24" y2="26" stroke="#52525b" strokeWidth="2" strokeLinecap="round" />
         <circle cx="24" cy="32" r="1.5" fill="#52525b" />
       </svg>
       <p className="text-sm text-zinc-400">No jobs will run under these conditions</p>
-      <p className="text-xs text-zinc-600 text-center max-w-xs">
+      <p className="max-w-xs text-xs text-center text-zinc-600">
         All jobs are disabled by their rules. Try adjusting the branch, tag, or pipeline source, or{" "}
-        <button onClick={onShowDisabled} className="text-zinc-400 underline hover:text-zinc-200 transition-colors">
+        <button onClick={onShowDisabled} className="underline transition-colors text-zinc-400 hover:text-zinc-200">
           show disabled jobs
         </button>
         {" "}to inspect why.
@@ -306,7 +306,7 @@ function NoJobsState({ onShowDisabled }: { onShowDisabled: () => void }) {
 
 function EmptyState() {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 gap-3">
+    <div className="flex flex-col items-center justify-center flex-1 gap-3 text-zinc-600">
       <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
         <rect x="4" y="12" width="12" height="10" rx="2" stroke="#52525b" strokeWidth="1.5" />
         <rect x="20" y="8" width="12" height="10" rx="2" stroke="#52525b" strokeWidth="1.5" />

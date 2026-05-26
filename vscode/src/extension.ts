@@ -100,7 +100,7 @@ async function configureGitlabAuth(context: vscode.ExtensionContext) {
       },
       {
         label: "$(link-external) Create a token on GitLab",
-        description: "Opens your browser — then paste the token here",
+        description: "Opens your browser - then paste the token here",
         openBrowser: true,
       },
     ],

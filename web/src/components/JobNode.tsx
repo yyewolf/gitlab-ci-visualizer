@@ -9,6 +9,7 @@ export type JobNodeData = {
   isAncestor: boolean;    // in the upstream path of the hovered job
   isDimmed: boolean;      // unrelated to current hover
   isInstant: boolean;     // no incoming edges, starts immediately
+  activeHandles: { top: boolean; bottom: boolean; left: boolean; right: boolean };
 };
 
 const whenDot: Record<string, string> = {
@@ -30,7 +31,7 @@ const whenLabel: Record<string, string> = {
 };
 
 function JobNode({ data }: NodeProps) {
-  const { job, isSelected, isHighlighted, isAncestor, isDimmed, isInstant } =
+  const { job, isSelected, isHighlighted, isAncestor, isDimmed, isInstant, activeHandles } =
     data as JobNodeData;
 
   const dot = job.enabled ? whenDot[job.when] ?? "bg-emerald-500" : "bg-zinc-600";
@@ -58,11 +59,22 @@ function JobNode({ data }: NodeProps) {
       <div
         className={`bg-zinc-900 rounded-lg px-3 py-2 w-52 cursor-pointer transition-all ${ring} ${shadow} ${dimClass}`}
       >
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="!bg-zinc-600 !w-2 !h-2 !border-0"
-        />
+        {activeHandles.top && (
+          <Handle
+            type="target"
+            id="top"
+            position={Position.Top}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0"
+          />
+        )}
+        {activeHandles.left && (
+          <Handle
+            type="target"
+            id="left"
+            position={Position.Left}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0"
+          />
+        )}
 
         {/* header */}
         <div className="flex items-start gap-2">
@@ -103,11 +115,22 @@ function JobNode({ data }: NodeProps) {
           <p className="text-[10px] text-zinc-500 ml-4 mt-0.5 truncate">{job.image}</p>
         )}
 
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="!bg-zinc-600 !w-2 !h-2 !border-0"
-        />
+        {activeHandles.right && (
+          <Handle
+            type="source"
+            id="right"
+            position={Position.Right}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0"
+          />
+        )}
+        {activeHandles.bottom && (
+          <Handle
+            type="source"
+            id="bottom"
+            position={Position.Bottom}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0"
+          />
+        )}
       </div>
 
       {/* instant tooltip, shown below the node when hovered */}

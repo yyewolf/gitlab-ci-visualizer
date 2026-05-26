@@ -472,6 +472,10 @@ test:
   image: alpine:3.20.3
 test2:
   image: alpine:3.20.3
+  needs: [ "test" ]
+test3:
+  image: alpine:3.20.3
+  needs: [ "test", "test2" ]
 stages:
 - ".pre"
 - build

@@ -183,6 +183,19 @@ function buildGraph(
   // "Instant" = no incoming edges across ALL visible edges (not just drawn ones)
   const hasIncoming = new Set(allVisibleEdges.map((e) => e.to));
 
+  const jobStage = new Map(visibleJobs.map((j) => [j.name, j.stage]));
+
+  const handleUsage = new Map(
+    visibleJobs.map((j) => [j.name, { top: false, bottom: false, left: false, right: false }])
+  );
+  for (const e of drawnEdges) {
+    const sameStage = jobStage.get(e.from) === jobStage.get(e.to);
+    const from = handleUsage.get(e.from);
+    const to = handleUsage.get(e.to);
+    if (from) sameStage ? (from.bottom = true) : (from.right = true);
+    if (to) sameStage ? (to.top = true) : (to.left = true);
+  }
+
   const stageJobCounts = new Map<string, number>();
   const baseNodes: Node[] = visibleJobs.map((job) => {
     const si = stageIdx.get(job.stage) ?? 0;
@@ -198,6 +211,7 @@ function buildGraph(
       data: {
         job,
         isInstant: !hasIncoming.has(job.name),
+        activeHandles: handleUsage.get(job.name) ?? { top: false, bottom: false, left: false, right: false },
         // hover/selection fields filled in merge step
         isSelected: false,
         isHighlighted: false,
@@ -207,22 +221,27 @@ function buildGraph(
     };
   });
 
-  const baseFlowEdges: FlowEdge[] = drawnEdges.map((e) => ({
-    id: `${e.from}→${e.to}`,
-    source: e.from,
-    target: e.to,
-    type: "smoothstep",
-    animated: false,
-    style: {
-      stroke: e.type === "needs" ? "#60a5fa" : "#3f3f46",
-      strokeWidth: e.type === "needs" ? 2 : 1,
-      strokeDasharray: e.type === "stage" ? "4 4" : undefined,
-    },
-    markerEnd:
-      e.type === "needs"
-        ? { type: MarkerType.ArrowClosed, color: "#60a5fa", width: 12, height: 12 }
-        : undefined,
-  }));
+  const baseFlowEdges: FlowEdge[] = drawnEdges.map((e) => {
+    const sameStage = jobStage.get(e.from) === jobStage.get(e.to);
+    return {
+      id: `${e.from}→${e.to}`,
+      source: e.from,
+      target: e.to,
+      sourceHandle: sameStage ? "bottom" : "right",
+      targetHandle: sameStage ? "top" : "left",
+      type: "smoothstep",
+      animated: false,
+      style: {
+        stroke: e.type === "needs" ? "#60a5fa" : "#3f3f46",
+        strokeWidth: e.type === "needs" ? 2 : 1,
+        strokeDasharray: e.type === "stage" ? "4 4" : undefined,
+      },
+      markerEnd:
+        e.type === "needs"
+          ? { type: MarkerType.ArrowClosed, color: "#60a5fa", width: 12, height: 12 }
+          : undefined,
+    };
+  });
 
   return { baseNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames };
 }
