@@ -143,19 +143,20 @@ func deepMergeInto(dst, src map[string]interface{}) {
 // ---- helpers ----
 
 func toStrSlice(v interface{}) []string {
-	switch val := v.(type) {
-	case []interface{}:
-		out := make([]string, 0, len(val))
-		for _, item := range val {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
+	var result []string
+	var flatten func(val interface{})
+	flatten = func(val interface{}) {
+		switch vVal := val.(type) {
+		case []interface{}:
+			for _, item := range vVal {
+				flatten(item)
 			}
+		case string:
+			result = append(result, vVal)
 		}
-		return out
-	case string:
-		return []string{val}
 	}
-	return nil
+	flatten(v)
+	return result
 }
 
 func getStr(m map[string]interface{}, key string) string {

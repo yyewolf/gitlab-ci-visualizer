@@ -395,22 +395,24 @@ func extractArtifacts(raw interface{}) *Artifacts {
 }
 
 func extractNeeds(raw interface{}) []string {
-	switch v := raw.(type) {
-	case []interface{}:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			switch n := item.(type) {
-			case string:
-				out = append(out, n)
-			case map[string]interface{}:
-				if job, ok := n["job"]; ok {
-					out = append(out, fmt.Sprintf("%v", job))
-				}
+	var out []string
+	var flatten func(val interface{})
+	flatten = func(val interface{}) {
+		switch v := val.(type) {
+		case []interface{}:
+			for _, item := range v {
+				flatten(item)
+			}
+		case string:
+			out = append(out, v)
+		case map[string]interface{}:
+			if job, ok := v["job"]; ok {
+				out = append(out, fmt.Sprintf("%v", job))
 			}
 		}
-		return out
 	}
-	return nil
+	flatten(raw)
+	return out
 }
 
 func extractParallel(raw interface{}) (count int, instances []MatrixInstance) {
