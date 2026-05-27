@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/types.ts","./src/components/ConditionPanel.tsx","./src/components/JobDetails.tsx","./src/components/JobNode.tsx","./src/components/PipelineGraph.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/components/conditionpanel.tsx","./src/components/jobdetails.tsx","./src/components/jobnode.tsx","./src/components/pipelinegraph.tsx"],"version":"5.9.3"}
