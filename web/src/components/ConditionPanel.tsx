@@ -5,6 +5,8 @@ interface Props {
   state: ConditionState;
   onChange: (s: ConditionState) => void;
   onAnalyze: () => void;
+  onAnalyzeWithGitlab?: () => void;
+  gitlabMode?: boolean;
   loading: boolean;
   suggestedBranches?: string[];
 }
@@ -22,7 +24,7 @@ const PIPELINE_SOURCES = [
   { value: "parent_pipeline", label: "Parent pipeline" },
 ];
 
-export default function ConditionPanel({ state, onChange, onAnalyze, loading, suggestedBranches }: Props) {
+export default function ConditionPanel({ state, onChange, onAnalyze, onAnalyzeWithGitlab, gitlabMode, loading, suggestedBranches }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   function set(patch: Partial<ConditionState>) {
@@ -189,14 +191,19 @@ export default function ConditionPanel({ state, onChange, onAnalyze, loading, su
       </div>
 
       {/* Analyze button */}
-      <div className="p-4 border-t border-zinc-800">
+      <div className="p-4 border-t border-zinc-800 space-y-2">
         <button
-          onClick={onAnalyze}
+          onClick={gitlabMode ? onAnalyzeWithGitlab : onAnalyze}
           disabled={!state.yaml || loading}
           className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs font-medium py-2 rounded transition-colors"
         >
-          {loading ? "Analyzing…" : "Analyze pipeline"}
+          {loading ? "Analyzing…" : gitlabMode ? "Analyze with GitLab" : "Analyze pipeline"}
         </button>
+        {gitlabMode && (
+          <p className="text-[10px] text-zinc-500 text-center">
+            Using GitLab-resolved YAML (includes resolved remotely)
+          </p>
+        )}
       </div>
     </aside>
   );

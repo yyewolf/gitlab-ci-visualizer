@@ -189,6 +189,8 @@ export default function App() {
             state={conditions}
             onChange={setConditions}
             onAnalyze={analyze}
+            onAnalyzeWithGitlab={analyzeWithGitlab}
+            gitlabMode={gitlabMode}
             loading={loading}
             suggestedBranches={pipeline.suggested_branches}
           />
