@@ -31,6 +31,10 @@ export interface Job {
   parallel_count?: number;
   matrix_instances?: MatrixInstance[];
   rules_trace: RuleTrace[];
+  retry?: number;
+  release?: boolean;
+  coverage?: boolean;
+  pages?: boolean;
 }
 
 export interface Artifacts {

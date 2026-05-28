@@ -108,6 +108,11 @@ function JobNode({ data }: NodeProps) {
           {job.tags && job.tags.length > 0 && (
             <Badge color="zinc">{job.tags[0]}</Badge>
           )}
+          {job.interruptible && <Badge color="fuchsia">interruptible</Badge>}
+          {job.retry != null && job.retry > 0 && <Badge color="rose">retry:{job.retry}</Badge>}
+          {job.release && <Badge color="emerald">release</Badge>}
+          {job.coverage && <Badge color="indigo">coverage</Badge>}
+          {job.pages && <Badge color="cyan">pages</Badge>}
         </div>
 
         {/* image */}
@@ -155,6 +160,11 @@ function Badge({ children, color }: { children: React.ReactNode; color: string }
     violet: "bg-violet-900 text-violet-300",
     orange: "bg-orange-900 text-orange-300",
     teal: "bg-teal-900 text-teal-300",
+    fuchsia: "bg-fuchsia-900 text-fuchsia-300",
+    rose: "bg-rose-900 text-rose-300",
+    emerald: "bg-emerald-900 text-emerald-300",
+    indigo: "bg-indigo-900 text-indigo-300",
+    cyan: "bg-cyan-900 text-cyan-300",
   };
   return (
     <span className={`text-[9px] px-1 py-0.5 rounded ${colors[color] ?? colors.zinc}`}>

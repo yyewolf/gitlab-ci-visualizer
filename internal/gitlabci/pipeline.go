@@ -128,6 +128,11 @@ func processJob(name string, raw map[string]interface{}, vars map[string]string,
 	// Parallel / matrix
 	j.ParallelCount, j.MatrixInstances = extractParallel(raw["parallel"])
 
+	j.Retry = extractRetry(raw["retry"])
+	j.Release = raw["release"] != nil
+	j.Coverage = getStr(raw, "coverage") != ""
+	j.Pages = raw["pages"] != nil
+
 	// Merge job vars into effective vars for rule evaluation
 	effectiveVars := make(map[string]string, len(vars)+len(jobVars))
 	for k, v := range vars {
@@ -386,6 +391,23 @@ func extractVarMap(raw interface{}) map[string]string {
 		}
 	}
 	return out
+}
+
+func extractRetry(v interface{}) int {
+	if v == nil {
+		return 0
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case map[string]interface{}:
+		if max, ok := val["max"]; ok {
+			if n, ok := max.(int); ok {
+				return n
+			}
+		}
+	}
+	return 0
 }
 
 func extractArtifacts(raw interface{}) *Artifacts {

@@ -36,6 +36,10 @@ type Job struct {
 	ParallelCount    int               `json:"parallel_count,omitempty"`
 	MatrixInstances  []MatrixInstance  `json:"matrix_instances,omitempty"`
 	RulesTrace       []RuleTrace       `json:"rules_trace"`
+	Retry            int               `json:"retry,omitempty"`
+	Release          bool              `json:"release,omitempty"`
+	Coverage         bool              `json:"coverage,omitempty"`
+	Pages            bool              `json:"pages,omitempty"`
 }
 
 // Artifacts holds the artifact configuration of a job.
