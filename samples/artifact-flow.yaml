@@ -1,0 +1,123 @@
+# Artifact flow example
+# Showcases how artifacts are produced and consumed across stages.
+# Load this in the visualizer and switch to "Artifact flow" view to see
+# which jobs pass data to which, and which jobs are excluded from the flow.
+
+stages:
+  - build
+  - test
+  - package
+  - deploy
+
+# ── Build stage ────────────────────────────────────────────────────────────
+# Both jobs produce artifacts consumed by later stages.
+
+build-frontend:
+  stage: build
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 day
+
+build-backend:
+  stage: build
+  script:
+    - go build -o bin/server .
+  artifacts:
+    paths:
+      - bin/server
+    expire_in: 1 day
+
+# ── Test stage ─────────────────────────────────────────────────────────────
+# test-unit and test-e2e receive artifacts via explicit needs (default artifacts:true).
+# lint depends on build-backend for ordering only — artifacts:false means no binaries
+# are downloaded (static analysis doesn't need compiled output).
+
+test-unit:
+  stage: test
+  needs:
+    - job: build-backend
+  script:
+    - go test -coverprofile=coverage.out ./...
+  coverage: '/coverage: \d+\.\d+%/'
+  artifacts:
+    reports:
+      junit: test-results.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+test-e2e:
+  stage: test
+  needs:
+    - job: build-frontend
+    - job: build-backend
+  script:
+    - ./run-e2e.sh
+  artifacts:
+    reports:
+      junit: e2e-report.xml
+
+lint:
+  stage: test
+  needs:
+    - job: build-backend
+      artifacts: false  # ordering only, no binary download
+  script:
+    - golangci-lint run
+
+# ── Package stage ──────────────────────────────────────────────────────────
+# No explicit needs → receives artifacts from ALL jobs in the previous
+# non-empty stage (test) via stage-based inheritance, which in turn carry
+# the build artifacts forwarded through test-unit and test-e2e.
+# Produces the final release archive.
+
+package:
+  stage: package
+  script:
+    - make package
+  artifacts:
+    paths:
+      - release.tar.gz
+    expire_in: 1 week
+  release:
+    tag_name: $CI_COMMIT_TAG
+    description: Release $CI_COMMIT_TAG
+
+# ── Deploy stage ───────────────────────────────────────────────────────────
+# deploy-staging and deploy-prod both need the package artifact.
+# notify has dependencies:[] so it downloads nothing — it only cares that
+# deploy-staging finished, not its output.
+
+deploy-staging:
+  stage: deploy
+  needs:
+    - job: package
+  environment: staging
+  script:
+    - ./deploy.sh staging
+
+notify:
+  stage: deploy
+  needs:
+    - job: deploy-staging
+      artifacts: false
+  dependencies: []  # explicitly opt out of all artifact downloads
+  script:
+    - ./notify.sh "Staging deploy complete"
+  when: always
+
+deploy-prod:
+  stage: deploy
+  needs:
+    - job: package
+    - job: deploy-staging
+      artifacts: false  # only gate on success, don't need staging output
+  environment: production
+  when: manual
+  interruptible: false
+  script:
+    - ./deploy.sh production

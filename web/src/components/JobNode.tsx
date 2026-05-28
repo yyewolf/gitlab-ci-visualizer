@@ -9,7 +9,7 @@ export type JobNodeData = {
   isAncestor: boolean;    // in the upstream path of the hovered job
   isDimmed: boolean;      // unrelated to current hover
   isInstant: boolean;     // no incoming edges, starts immediately
-  activeHandles: { top: boolean; bottom: boolean; left: boolean; right: boolean };
+  activeHandles: { top: boolean; bottom: boolean; left: boolean; right: boolean; topSrc: boolean; bottomTgt: boolean };
 };
 
 const whenDot: Record<string, string> = {
@@ -60,12 +60,12 @@ function JobNode({ data }: NodeProps) {
         className={`bg-zinc-900 rounded-lg px-3 py-2 w-52 cursor-pointer transition-all ${ring} ${shadow} ${dimClass}`}
       >
         {activeHandles.top && (
-          <Handle
-            type="target"
-            id="top"
-            position={Position.Top}
-            className="!bg-zinc-600 !w-2 !h-2 !border-0"
-          />
+          <Handle type="target" id="top" position={Position.Top}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0" />
+        )}
+        {activeHandles.topSrc && (
+          <Handle type="source" id="topSrc" position={Position.Top}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0" />
         )}
         {activeHandles.left && (
           <Handle
@@ -121,20 +121,16 @@ function JobNode({ data }: NodeProps) {
         )}
 
         {activeHandles.right && (
-          <Handle
-            type="source"
-            id="right"
-            position={Position.Right}
-            className="!bg-zinc-600 !w-2 !h-2 !border-0"
-          />
+          <Handle type="source" id="right" position={Position.Right}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0" />
         )}
         {activeHandles.bottom && (
-          <Handle
-            type="source"
-            id="bottom"
-            position={Position.Bottom}
-            className="!bg-zinc-600 !w-2 !h-2 !border-0"
-          />
+          <Handle type="source" id="bottom" position={Position.Bottom}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0" />
+        )}
+        {activeHandles.bottomTgt && (
+          <Handle type="target" id="bottomTgt" position={Position.Bottom}
+            className="!bg-zinc-600 !w-2 !h-2 !border-0" />
         )}
       </div>
 

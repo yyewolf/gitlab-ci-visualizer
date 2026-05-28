@@ -44,8 +44,8 @@ export default function ConditionPanel({ state, onChange, onAnalyze, onAnalyzeWi
     set({ extraVars: state.extraVars.filter((_, idx) => idx !== i) });
   }
 
-  async function loadSample() {
-    const res = await fetch("/samples/ctf-gitlab-ci.yaml");
+  async function loadSample(name: string) {
+    const res = await fetch(`/samples/${name}`);
     if (res.ok) {
       set({ yaml: await res.text() });
     }
@@ -70,9 +70,12 @@ export default function ConditionPanel({ state, onChange, onAnalyze, onAnalyzeWi
         {/* YAML source */}
         <div>
           <Label>YAML source</Label>
-          <div className="flex gap-2 mb-1.5">
-            <button onClick={loadSample} className={btn}>
-              Load sample
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            <button onClick={() => loadSample("ctf-gitlab-ci.yaml")} className={btn}>
+              CTF sample
+            </button>
+            <button onClick={() => loadSample("artifact-flow.yaml")} className={btn}>
+              Artifact flow
             </button>
             <button onClick={() => fileRef.current?.click()} className={btn}>
               Load file…

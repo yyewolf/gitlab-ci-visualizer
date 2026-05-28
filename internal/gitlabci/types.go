@@ -11,6 +11,7 @@ type Output struct {
 	Stages             []string `json:"stages"`
 	Jobs               []Job    `json:"jobs"`
 	Edges              []Edge   `json:"edges"`
+	ArtifactEdges      []Edge   `json:"artifact_edges,omitempty"`
 	SuggestedBranches  []string `json:"suggested_branches,omitempty"`
 	SuggestedVariables []string `json:"suggested_variables,omitempty"`
 	Warnings           []string `json:"warnings,omitempty"`
@@ -36,10 +37,12 @@ type Job struct {
 	ParallelCount    int               `json:"parallel_count,omitempty"`
 	MatrixInstances  []MatrixInstance  `json:"matrix_instances,omitempty"`
 	RulesTrace       []RuleTrace       `json:"rules_trace"`
-	Retry            int               `json:"retry,omitempty"`
-	Release          bool              `json:"release,omitempty"`
-	Coverage         bool              `json:"coverage,omitempty"`
-	Pages            bool              `json:"pages,omitempty"`
+	Retry               int       `json:"retry,omitempty"`
+	Release             bool      `json:"release,omitempty"`
+	Coverage            bool      `json:"coverage,omitempty"`
+	Pages               bool      `json:"pages,omitempty"`
+	NeedsNoArtifacts    []string  `json:"needs_no_artifacts,omitempty"`
+	Dependencies        *[]string `json:"dependencies,omitempty"`
 }
 
 // Artifacts holds the artifact configuration of a job.

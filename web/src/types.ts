@@ -7,6 +7,7 @@ export interface Pipeline {
   stages: string[];
   jobs: Job[];
   edges: Edge[];
+  artifact_edges?: Edge[];
   suggested_branches?: string[];
   suggested_variables?: string[];
   warnings?: string[];
@@ -35,6 +36,8 @@ export interface Job {
   release?: boolean;
   coverage?: boolean;
   pages?: boolean;
+  needs_no_artifacts?: string[];
+  dependencies?: string[];
 }
 
 export interface Artifacts {

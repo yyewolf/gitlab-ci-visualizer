@@ -17,6 +17,9 @@ import (
 //go:embed web/dist
 var webFS embed.FS
 
+//go:embed samples
+var samplesFS embed.FS
+
 func main() {
 	serve := flag.String("serve", "", "address to listen on (e.g. :3001)")
 	flag.Parse()
@@ -85,6 +88,12 @@ func runServer(addr string) {
 		if err := json.NewEncoder(w).Encode(result); err != nil {
 			log.Printf("encode response: %v", err)
 		}
+	})
+
+	// Sample YAML files.
+	mux.HandleFunc("/samples/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		http.FileServer(http.FS(samplesFS)).ServeHTTP(w, r)
 	})
 
 	// Frontend (SPA).

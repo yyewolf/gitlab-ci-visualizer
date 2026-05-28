@@ -10,13 +10,12 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Pipeline, Job, Edge } from "../types";
-import JobNode, { type JobNodeData } from "./JobNode";
+import ArtifactJobNode, { type ArtifactJobNodeData } from "./ArtifactJobNode";
 
 interface Props {
   pipeline: Pipeline;
   selectedJob: Job | null;
   onSelectJob: (job: Job | null) => void;
-  showStageEdges: boolean;
   showDisabled: boolean;
 }
 
@@ -26,77 +25,70 @@ const STAGE_GAP = 80;
 const JOB_GAP = 12;
 const STAGE_HEADER_H = 32;
 
-const nodeTypes = { job: JobNode };
+const nodeTypes = { artifactJob: ArtifactJobNode };
 
-export default function PipelineGraph({
+export default function ArtifactFlowView({
   pipeline,
   selectedJob,
   onSelectJob,
-  showStageEdges,
   showDisabled,
 }: Props) {
   const [hoveredJobName, setHoveredJobName] = useState<string | null>(null);
 
-  // Stable structure: positions, isInstant, visible sets
-  const { baseNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames } =
-    useMemo(
-      () => buildGraph(pipeline, showStageEdges, showDisabled),
-      [pipeline, showStageEdges, showDisabled],
-    );
+  const { baseNodes, baseFlowEdges, visibleArtifactEdges, visibleStages, visibleJobNames, inFlowSet } =
+    useMemo(() => buildGraph(pipeline, showDisabled), [pipeline, showDisabled]);
 
-  // Disabled jobs suppress path highlighting and dimming when hovered.
   const hoveredJobEnabled = useMemo(() => {
     if (!hoveredJobName) return true;
     return pipeline.jobs.find((j) => j.name === hoveredJobName)?.enabled ?? true;
   }, [hoveredJobName, pipeline.jobs]);
 
-  // Ancestor path uses ALL edges (stage + needs) so hovering a job shows its full
-  // upstream chain even when stage edges aren't drawn.
   const ancestorPath = useMemo(() => {
     if (!hoveredJobName || !hoveredJobEnabled) return null;
-    return computeAncestors(hoveredJobName, allVisibleEdges, visibleJobNames);
-  }, [hoveredJobName, hoveredJobEnabled, allVisibleEdges, visibleJobNames]);
+    return computeAncestors(hoveredJobName, visibleArtifactEdges, visibleJobNames);
+  }, [hoveredJobName, hoveredJobEnabled, visibleArtifactEdges, visibleJobNames]);
 
-  // Merge hover/selection state into nodes
   const nodes: Node[] = useMemo(
     () =>
-      baseNodes.map((n) => ({
-        ...n,
-        data: {
-          ...(n.data as JobNodeData),
-          isSelected: n.id === selectedJob?.name,
-          isHighlighted: n.id === hoveredJobName,
-          isAncestor: ancestorPath?.jobs.has(n.id) ?? false,
-          isDimmed:
-            hoveredJobName != null &&
-            hoveredJobEnabled &&
-            n.id !== hoveredJobName &&
-            !(ancestorPath?.jobs.has(n.id)),
-        } satisfies JobNodeData,
-      })),
-    [baseNodes, selectedJob, hoveredJobName, hoveredJobEnabled, ancestorPath],
+      baseNodes.map((n) => {
+        const isHovering = hoveredJobName != null && hoveredJobEnabled;
+        const onPath = ancestorPath?.jobs.has(n.id) ?? false;
+        return {
+          ...n,
+          data: {
+            ...(n.data as ArtifactJobNodeData),
+            isSelected: n.id === selectedJob?.name,
+            isHighlighted: n.id === hoveredJobName,
+            isAncestor: onPath,
+            // When hovering: dim everything not on the highlighted path.
+            // When idle: dim jobs outside the artifact flow.
+            isDimmed: isHovering
+              ? n.id !== hoveredJobName && !onPath
+              : !inFlowSet.has(n.id),
+          } satisfies ArtifactJobNodeData,
+        };
+      }),
+    [baseNodes, selectedJob, hoveredJobName, hoveredJobEnabled, ancestorPath, inFlowSet],
   );
 
-  // Merge path highlighting into edges
   const edges: FlowEdge[] = useMemo(() => {
     const isHovering = hoveredJobName != null && hoveredJobEnabled;
     return baseFlowEdges.map((e) => {
       const onPath = ancestorPath?.edgeIds.has(e.id) ?? false;
+      const color = onPath ? "#fbbf24" : "#d97706";
       return {
         ...e,
-        animated: onPath || e.animated,
+        animated: onPath,
         style: {
           ...e.style,
-          stroke: onPath ? "#f59e0b" : e.style?.stroke,
+          stroke: color,
           strokeWidth: onPath ? 2 : e.style?.strokeWidth,
           opacity: isHovering && !onPath ? 0.08 : 1,
         },
-        markerEnd: onPath
-          ? { type: MarkerType.ArrowClosed, color: "#f59e0b", width: 12, height: 12 }
-          : e.markerEnd,
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 12, height: 12 },
       };
     });
-  }, [baseFlowEdges, hoveredJobName, ancestorPath]);
+  }, [baseFlowEdges, hoveredJobName, hoveredJobEnabled, ancestorPath]);
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
@@ -105,16 +97,20 @@ export default function PipelineGraph({
     },
     [pipeline, onSelectJob],
   );
-
-  const onNodeMouseEnter: NodeMouseHandler = useCallback((_, node) => {
-    setHoveredJobName(node.id);
-  }, []);
-
-  const onNodeMouseLeave: NodeMouseHandler = useCallback(() => {
-    setHoveredJobName(null);
-  }, []);
-
+  const onNodeMouseEnter: NodeMouseHandler = useCallback((_, node) => setHoveredJobName(node.id), []);
+  const onNodeMouseLeave: NodeMouseHandler = useCallback(() => setHoveredJobName(null), []);
   const onPaneClick = useCallback(() => onSelectJob(null), [onSelectJob]);
+
+  if ((pipeline.artifact_edges ?? []).length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 gap-2 text-zinc-600">
+        <p className="text-sm">No artifact flow detected</p>
+        <p className="text-xs text-zinc-700">
+          Add <code className="text-zinc-500">artifacts:</code> blocks to your jobs to see how data flows through the pipeline.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 relative bg-zinc-950">
@@ -137,55 +133,44 @@ export default function PipelineGraph({
       </ReactFlow>
 
       {visibleStages.length > 0 && (
-        <StageLegend
-          stages={visibleStages}
-          jobs={baseNodes.map((n) => (n.data as JobNodeData).job)}
-        />
+        <StageLegend stages={visibleStages} jobs={baseNodes.map((n) => (n.data as ArtifactJobNodeData).job)} />
       )}
+
+      <ArtifactLegend />
     </div>
   );
 }
 
-// ---- graph builder (stable: no hover/selection state) ----
+// ---- graph builder ----
 
 function buildGraph(
   pipeline: Pipeline,
-  showStageEdges: boolean,
   showDisabled: boolean,
 ): {
   baseNodes: Node[];
   baseFlowEdges: FlowEdge[];
-  allVisibleEdges: Edge[];
+  visibleArtifactEdges: Edge[];
   visibleStages: string[];
   visibleJobNames: Set<string>;
+  inFlowSet: Set<string>;
 } {
   const visibleJobs = showDisabled ? pipeline.jobs : pipeline.jobs.filter((j) => j.enabled);
   const visibleJobNames = new Set(visibleJobs.map((j) => j.name));
+
+  const visibleArtifactEdges = (pipeline.artifact_edges ?? []).filter(
+    (e) => visibleJobNames.has(e.from) && visibleJobNames.has(e.to),
+  );
+
+  const producerSet = new Set(visibleJobs.filter((j) => j.artifacts != null).map((j) => j.name));
+  const consumerSet = new Set(visibleArtifactEdges.map((e) => e.to));
+  const inFlowSet = new Set([...producerSet, ...consumerSet]);
 
   const stagesWithJobs = new Set(visibleJobs.map((j) => j.stage));
   const visibleStages = pipeline.stages.filter((s) => stagesWithJobs.has(s));
   const stageIdx = new Map(visibleStages.map((s, i) => [s, i]));
 
-  // All edges between visible jobs, used for ancestor path computation regardless
-  // of whether stage edges are currently drawn.
-  const allVisibleEdges = pipeline.edges.filter(
-    (e) => visibleJobNames.has(e.from) && visibleJobNames.has(e.to),
-  );
-
-  // Edges that are actually drawn (respects showStageEdges)
-  const drawnEdges = pipeline.edges.filter(
-    (e) =>
-      visibleJobNames.has(e.from) &&
-      visibleJobNames.has(e.to) &&
-      (showStageEdges || e.type === "needs"),
-  );
-
-  // "Instant" = no incoming edges across ALL visible edges (not just drawn ones)
-  const hasIncoming = new Set(allVisibleEdges.map((e) => e.to));
-
   const jobStage = new Map(visibleJobs.map((j) => [j.name, j.stage]));
 
-  // Index of each job within its stage column (determines visual top-to-bottom order).
   const stageOrder = new Map<string, number>();
   {
     const counters = new Map<string, number>();
@@ -196,9 +181,9 @@ function buildGraph(
   }
 
   const handleUsage = new Map(
-    visibleJobs.map((j) => [j.name, { top: false, bottom: false, left: false, right: false, topSrc: false, bottomTgt: false }])
+    visibleJobs.map((j) => [j.name, { top: false, bottom: false, left: false, right: false, topSrc: false, bottomTgt: false }]),
   );
-  for (const e of drawnEdges) {
+  for (const e of visibleArtifactEdges) {
     const sameStage = jobStage.get(e.from) === jobStage.get(e.to);
     const from = handleUsage.get(e.from);
     const to = handleUsage.get(e.to);
@@ -224,62 +209,54 @@ function buildGraph(
     stageJobCounts.set(job.stage, count + 1);
     return {
       id: job.name,
-      type: "job",
+      type: "artifactJob",
       position: {
         x: si * (NODE_W + STAGE_GAP),
         y: STAGE_HEADER_H + count * (NODE_H + JOB_GAP),
       },
       data: {
         job,
-        isInstant: !hasIncoming.has(job.name),
-        activeHandles: handleUsage.get(job.name) ?? { top: false, bottom: false, left: false, right: false, topSrc: false, bottomTgt: false },
-        // hover/selection fields filled in merge step
+        isProducer: producerSet.has(job.name),
+        inFlow: inFlowSet.has(job.name),
         isSelected: false,
         isHighlighted: false,
         isAncestor: false,
-        isDimmed: false,
-      } satisfies JobNodeData,
+        isDimmed: !inFlowSet.has(job.name),
+        activeHandles: handleUsage.get(job.name) ?? { top: false, bottom: false, left: false, right: false, topSrc: false, bottomTgt: false },
+      } satisfies ArtifactJobNodeData,
     };
   });
 
-  const baseFlowEdges: FlowEdge[] = drawnEdges.map((e) => {
+  const baseFlowEdges: FlowEdge[] = visibleArtifactEdges.map((e) => {
     const sameStage = jobStage.get(e.from) === jobStage.get(e.to);
     const fromAbove = sameStage && (stageOrder.get(e.from) ?? 0) < (stageOrder.get(e.to) ?? 0);
     return {
-      id: `${e.from}→${e.to}`,
+      id: `art:${e.from}→${e.to}`,
       source: e.from,
       target: e.to,
       sourceHandle: sameStage ? (fromAbove ? "bottom" : "topSrc") : "right",
       targetHandle: sameStage ? (fromAbove ? "top" : "bottomTgt") : "left",
       type: "smoothstep",
       animated: false,
-      style: {
-        stroke: e.type === "needs" ? "#60a5fa" : "#3f3f46",
-        strokeWidth: e.type === "needs" ? 2 : 1,
-        strokeDasharray: e.type === "stage" ? "4 4" : undefined,
-      },
-      markerEnd:
-        e.type === "needs"
-          ? { type: MarkerType.ArrowClosed, color: "#60a5fa", width: 12, height: 12 }
-          : undefined,
+      style: { stroke: "#d97706", strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#d97706", width: 12, height: 12 },
     };
   });
 
-  return { baseNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames };
+  return { baseNodes, baseFlowEdges, visibleArtifactEdges, visibleStages, visibleJobNames, inFlowSet };
 }
 
-// ---- ancestor BFS ----
+// ---- ancestor BFS (same logic as PipelineGraph) ----
 
 function computeAncestors(
   fromName: string,
   edges: Edge[],
   visibleJobNames: Set<string>,
 ): { jobs: Set<string>; edgeIds: Set<string> } {
-  // Reverse adjacency: target → [{source, edgeId}]
   const revAdj = new Map<string, Array<{ source: string; edgeId: string }>>();
   for (const e of edges) {
     if (!visibleJobNames.has(e.from) || !visibleJobNames.has(e.to)) continue;
-    const edgeId = `${e.from}→${e.to}`;
+    const edgeId = `art:${e.from}→${e.to}`;
     const arr = revAdj.get(e.to) ?? [];
     arr.push({ source: e.from, edgeId });
     revAdj.set(e.to, arr);
@@ -301,28 +278,44 @@ function computeAncestors(
   return { jobs, edgeIds };
 }
 
-// ---- stage legend ----
+// ---- stage legend (same as PipelineGraph) ----
 
 function StageLegend({ stages, jobs }: { stages: string[]; jobs: Job[] }) {
   const counts = new Map<string, number>();
   for (const j of jobs) counts.set(j.stage, (counts.get(j.stage) ?? 0) + 1);
-
   return (
     <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-none z-10">
       {stages.map((s) => {
         const count = counts.get(s) ?? 0;
         return (
-          <div
-            key={s}
-            className="bg-zinc-900/80 backdrop-blur border border-zinc-700 rounded px-2 py-1 text-center"
-          >
+          <div key={s} className="bg-zinc-900/80 backdrop-blur border border-zinc-700 rounded px-2 py-1 text-center">
             <p className="text-[10px] font-mono text-zinc-300">{s}</p>
-            <p className="text-[9px] text-zinc-600">
-              {count} job{count !== 1 ? "s" : ""}
-            </p>
+            <p className="text-[9px] text-zinc-600">{count} job{count !== 1 ? "s" : ""}</p>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ArtifactLegend() {
+  return (
+    <div className="absolute bottom-10 right-4 flex flex-col gap-1.5 pointer-events-none z-10 bg-zinc-900/80 backdrop-blur border border-zinc-800 rounded px-3 py-2">
+      <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+        <span className="text-amber-500 text-[11px]">▤</span>
+        Produces artifacts
+      </div>
+      <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+        <svg width="20" height="8" className="flex-shrink-0">
+          <line x1="0" y1="4" x2="14" y2="4" stroke="#d97706" strokeWidth="1.5" />
+          <polygon points="14,1 20,4 14,7" fill="#d97706" />
+        </svg>
+        Artifact flow
+      </div>
+      <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+        <span className="w-5 h-2 rounded bg-zinc-700 opacity-30" />
+        No artifact flow
+      </div>
     </div>
   );
 }

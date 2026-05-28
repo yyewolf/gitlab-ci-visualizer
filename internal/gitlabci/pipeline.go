@@ -81,6 +81,7 @@ func Analyze(input Input) (*Output, error) {
 		Stages:             ci.stages,
 		Jobs:               jobs,
 		Edges:              computeEdges(jobs, stageIdx),
+		ArtifactEdges:      computeArtifactEdges(jobs, stageIdx),
 		SuggestedBranches:  extractSuggestedBranches(ci),
 		SuggestedVariables: extractSuggestedVariables(ci),
 		Warnings:           warnings,
@@ -122,7 +123,12 @@ func processJob(name string, raw map[string]interface{}, vars map[string]string,
 	// Needs
 	if n, ok := raw["needs"]; ok {
 		j.HasExplicitNeeds = true
-		j.Needs = extractNeeds(n)
+		j.Needs, j.NeedsNoArtifacts = extractNeedsAndArtifacts(n)
+	}
+
+	// Explicit artifact source override
+	if d, ok := raw["dependencies"]; ok {
+		j.Dependencies = extractDependencies(d)
 	}
 
 	// Parallel / matrix
@@ -391,6 +397,103 @@ func extractVarMap(raw interface{}) map[string]string {
 		}
 	}
 	return out
+}
+
+func extractNeedsAndArtifacts(raw interface{}) (needs []string, noArtifacts []string) {
+	var flatten func(val interface{})
+	flatten = func(val interface{}) {
+		switch v := val.(type) {
+		case []interface{}:
+			for _, item := range v {
+				flatten(item)
+			}
+		case string:
+			needs = append(needs, v)
+		case map[string]interface{}:
+			if job, ok := v["job"]; ok {
+				name := fmt.Sprintf("%v", job)
+				needs = append(needs, name)
+				if art, ok := v["artifacts"]; ok {
+					if b, ok := art.(bool); ok && !b {
+						noArtifacts = append(noArtifacts, name)
+					}
+				}
+			}
+		}
+	}
+	flatten(raw)
+	return
+}
+
+func extractDependencies(raw interface{}) *[]string {
+	result := make([]string, 0)
+	if list, ok := raw.([]interface{}); ok {
+		for _, item := range list {
+			result = append(result, fmt.Sprintf("%v", item))
+		}
+	}
+	return &result
+}
+
+func computeArtifactEdges(jobs []Job, stageIdx map[string]int) []Edge {
+	producers := make(map[string]bool)
+	for _, j := range jobs {
+		if j.Enabled && j.Artifacts != nil {
+			producers[j.Name] = true
+		}
+	}
+
+	stageJobs := make(map[int][]string)
+	for _, j := range jobs {
+		if j.Enabled {
+			stageJobs[stageIdx[j.Stage]] = append(stageJobs[stageIdx[j.Stage]], j.Name)
+		}
+	}
+
+	seen := make(map[string]bool)
+	var edges []Edge
+	addEdge := func(from, to string) {
+		if !producers[from] {
+			return
+		}
+		key := from + "→" + to
+		if !seen[key] {
+			seen[key] = true
+			edges = append(edges, Edge{From: from, To: to, Type: "artifact"})
+		}
+	}
+
+	for _, j := range jobs {
+		if !j.Enabled {
+			continue
+		}
+		if j.Dependencies != nil {
+			for _, dep := range *j.Dependencies {
+				addEdge(dep, j.Name)
+			}
+		} else if j.HasExplicitNeeds {
+			noArt := make(map[string]bool)
+			for _, n := range j.NeedsNoArtifacts {
+				noArt[n] = true
+			}
+			for _, need := range j.Needs {
+				if !noArt[need] {
+					addEdge(need, j.Name)
+				}
+			}
+		} else {
+			myIdx := stageIdx[j.Stage]
+			for prevIdx := myIdx - 1; prevIdx >= 0; prevIdx-- {
+				if prev, ok := stageJobs[prevIdx]; ok && len(prev) > 0 {
+					for _, pj := range prev {
+						addEdge(pj, j.Name)
+					}
+					break
+				}
+			}
+		}
+	}
+	return edges
 }
 
 func extractRetry(v interface{}) int {

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import type { Pipeline, Job, ConditionState, PipelineInput } from "./types";
 import ConditionPanel from "./components/ConditionPanel";
 import PipelineGraph from "./components/PipelineGraph";
+import ArtifactFlowView from "./components/ArtifactFlowView";
 import JobDetails from "./components/JobDetails";
 
 const EMPTY_PIPELINE: Pipeline = { stages: [], jobs: [], edges: [] };
@@ -29,6 +30,7 @@ export default function App() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"pipeline" | "artifacts">("pipeline");
   const [showStageEdges, setShowStageEdges] = useState(true);
   const [showDisabled, setShowDisabled] = useState(false);
   // Tracks whether the last triggered analysis used GitLab resolution.
@@ -211,6 +213,24 @@ export default function App() {
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* toolbar */}
         <div className="flex items-center gap-4 px-4 py-2 text-xs border-b border-zinc-800 bg-zinc-900">
+          {/* view mode tabs */}
+          {totalCount > 0 && (
+            <div className="flex items-center gap-0.5 rounded bg-zinc-800 p-0.5">
+              <button
+                className={`px-2.5 py-1 rounded text-xs transition-colors ${viewMode === "pipeline" ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                onClick={() => setViewMode("pipeline")}
+              >
+                Pipeline
+              </button>
+              <button
+                className={`px-2.5 py-1 rounded text-xs transition-colors ${viewMode === "artifacts" ? "bg-amber-900 text-amber-200" : "text-zinc-500 hover:text-zinc-300"}`}
+                onClick={() => setViewMode("artifacts")}
+              >
+                Artifact flow
+              </button>
+            </div>
+          )}
+
           {totalCount > 0 && (
             <>
               <span className="text-zinc-400">
@@ -219,10 +239,22 @@ export default function App() {
               </span>
               <span className="text-zinc-700">·</span>
               <span className="text-zinc-400">{pipeline.stages.length} stages</span>
-              <span className="text-zinc-700">·</span>
-              <span className="text-zinc-400">
-                {pipeline.edges.filter((e) => e.type === "needs").length} explicit deps
-              </span>
+              {viewMode === "pipeline" && (
+                <>
+                  <span className="text-zinc-700">·</span>
+                  <span className="text-zinc-400">
+                    {pipeline.edges.filter((e) => e.type === "needs").length} explicit deps
+                  </span>
+                </>
+              )}
+              {viewMode === "artifacts" && (
+                <>
+                  <span className="text-zinc-700">·</span>
+                  <span className="text-zinc-400">
+                    {(pipeline.artifact_edges ?? []).length} artifact flows
+                  </span>
+                </>
+              )}
             </>
           )}
           <div className="flex items-center gap-3 ml-auto">
@@ -235,15 +267,17 @@ export default function App() {
               />
               Show disabled
             </label>
-            <label className="flex items-center gap-1.5 text-zinc-500 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showStageEdges}
-                onChange={(e) => setShowStageEdges(e.target.checked)}
-                className="accent-blue-500"
-              />
-              Show stage edges
-            </label>
+            {viewMode === "pipeline" && (
+              <label className="flex items-center gap-1.5 text-zinc-500 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showStageEdges}
+                  onChange={(e) => setShowStageEdges(e.target.checked)}
+                  className="accent-blue-500"
+                />
+                Show stage edges
+              </label>
+            )}
           </div>
         </div>
 
@@ -269,6 +303,13 @@ export default function App() {
             <EmptyState />
           ) : enabledCount === 0 && !showDisabled ? (
             <NoJobsState onShowDisabled={() => setShowDisabled(true)} />
+          ) : viewMode === "artifacts" ? (
+            <ArtifactFlowView
+              pipeline={pipeline}
+              selectedJob={selectedJob}
+              onSelectJob={setSelectedJob}
+              showDisabled={showDisabled}
+            />
           ) : (
             <PipelineGraph
               pipeline={pipeline}
