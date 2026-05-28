@@ -80,6 +80,9 @@ export default function ConditionPanel({ state, onChange, onAnalyze, onAnalyzeWi
             <button onClick={() => loadSample("matrix.yaml")} className={btn}>
               Matrix
             </button>
+            <button onClick={() => loadSample("triggers.yaml")} className={btn}>
+              Triggers
+            </button>
             <button onClick={() => fileRef.current?.click()} className={btn}>
               Load file…
             </button>

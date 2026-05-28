@@ -37,12 +37,22 @@ type Job struct {
 	ParallelCount    int               `json:"parallel_count,omitempty"`
 	MatrixInstances  []MatrixInstance  `json:"matrix_instances,omitempty"`
 	RulesTrace       []RuleTrace       `json:"rules_trace"`
-	Retry               int       `json:"retry,omitempty"`
-	Release             bool      `json:"release,omitempty"`
-	Coverage            bool      `json:"coverage,omitempty"`
-	Pages               bool      `json:"pages,omitempty"`
-	NeedsNoArtifacts    []string  `json:"needs_no_artifacts,omitempty"`
-	Dependencies        *[]string `json:"dependencies,omitempty"`
+	Retry               int         `json:"retry,omitempty"`
+	Release             bool        `json:"release,omitempty"`
+	Coverage            bool        `json:"coverage,omitempty"`
+	Pages               bool        `json:"pages,omitempty"`
+	NeedsNoArtifacts    []string    `json:"needs_no_artifacts,omitempty"`
+	Dependencies        *[]string   `json:"dependencies,omitempty"`
+	Trigger             *TriggerInfo `json:"trigger,omitempty"`
+}
+
+// TriggerInfo describes a trigger: keyword pointing to a downstream pipeline.
+// Exactly one of Project (multi-project) or Include (parent-child / local) is set.
+type TriggerInfo struct {
+	Project  string `json:"project,omitempty"`  // multi-project: "group/project"
+	Branch   string `json:"branch,omitempty"`   // target branch for multi-project
+	Strategy string `json:"strategy,omitempty"` // "depend" etc.
+	Include  string `json:"include,omitempty"`  // local file path for parent-child
 }
 
 // Artifacts holds the artifact configuration of a job.

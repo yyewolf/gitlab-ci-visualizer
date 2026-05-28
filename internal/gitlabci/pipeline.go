@@ -138,6 +138,7 @@ func processJob(name string, raw map[string]interface{}, vars map[string]string,
 	j.Release = raw["release"] != nil
 	j.Coverage = getStr(raw, "coverage") != ""
 	j.Pages = raw["pages"] != nil
+	j.Trigger = extractTrigger(raw["trigger"])
 
 	// Merge job vars into effective vars for rule evaluation
 	effectiveVars := make(map[string]string, len(vars)+len(jobVars))
@@ -511,6 +512,58 @@ func extractRetry(v interface{}) int {
 		}
 	}
 	return 0
+}
+
+func extractTrigger(raw interface{}) *TriggerInfo {
+	if raw == nil {
+		return nil
+	}
+	switch v := raw.(type) {
+	case string:
+		if v == "" {
+			return nil
+		}
+		return &TriggerInfo{Project: v}
+	case map[string]interface{}:
+		t := &TriggerInfo{}
+		if proj, ok := v["project"]; ok {
+			t.Project = fmt.Sprintf("%v", proj)
+		}
+		if branch, ok := v["branch"]; ok {
+			t.Branch = fmt.Sprintf("%v", branch)
+		}
+		if strategy, ok := v["strategy"]; ok {
+			t.Strategy = fmt.Sprintf("%v", strategy)
+		}
+		if inc, ok := v["include"]; ok {
+			t.Include = extractTriggerInclude(inc)
+		}
+		if t.Project == "" && t.Include == "" {
+			return nil
+		}
+		return t
+	}
+	return nil
+}
+
+func extractTriggerInclude(raw interface{}) string {
+	switch v := raw.(type) {
+	case string:
+		return v
+	case map[string]interface{}:
+		if local, ok := v["local"]; ok {
+			return fmt.Sprintf("%v", local)
+		}
+	case []interface{}:
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				if local, ok := m["local"]; ok {
+					return fmt.Sprintf("%v", local)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func extractArtifacts(raw interface{}) *Artifacts {

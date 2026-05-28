@@ -3,9 +3,11 @@ import type { Job, MatrixInstance } from "../types";
 interface Props {
   job: Job | null;
   onClose: () => void;
+  downstreamPipeline?: boolean;
+  onViewDownstream?: (jobName: string) => void;
 }
 
-export default function JobDetails({ job, onClose }: Props) {
+export default function JobDetails({ job, onClose, downstreamPipeline, onViewDownstream }: Props) {
   if (!job) return null;
 
   return (
@@ -92,6 +94,38 @@ export default function JobDetails({ job, onClose }: Props) {
                 <span className="text-zinc-300 break-all font-mono">{v}</span>
               </div>
             ))}
+          </Section>
+        )}
+
+        {/* trigger */}
+        {job.trigger && (
+          <Section title="Trigger">
+            {job.trigger.include ? (
+              <Row label="Type">parent-child</Row>
+            ) : (
+              <Row label="Type">multi-project</Row>
+            )}
+            {job.trigger.project && <Row label="Project">{job.trigger.project}</Row>}
+            {job.trigger.branch && <Row label="Branch">{job.trigger.branch}</Row>}
+            {job.trigger.strategy && <Row label="Strategy">{job.trigger.strategy}</Row>}
+            {job.trigger.include && (
+              <Row label="File"><span className="font-mono">{job.trigger.include}</span></Row>
+            )}
+            {downstreamPipeline && onViewDownstream && (
+              <button
+                onClick={() => onViewDownstream(job.name)}
+                className="mt-2 w-full text-left px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded text-[10px] text-sky-400 transition-colors"
+              >
+                View downstream pipeline →
+              </button>
+            )}
+            {!downstreamPipeline && (
+              <p className="mt-1 text-[10px] text-zinc-600 italic">
+                {job.trigger.include
+                  ? "Downstream pipeline not resolved (open in VS Code)"
+                  : "Downstream pipeline not resolved (GitLab connection required)"}
+              </p>
+            )}
           </Section>
         )}
 

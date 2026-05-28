@@ -5,6 +5,11 @@ import PipelineGraph from "./components/PipelineGraph";
 import ArtifactFlowView from "./components/ArtifactFlowView";
 import JobDetails from "./components/JobDetails";
 
+interface DownstreamNav {
+  jobName: string;
+  pipeline: Pipeline;
+}
+
 const EMPTY_PIPELINE: Pipeline = { stages: [], jobs: [], edges: [] };
 
 // Acquire the VSCode API once at module level - only available inside a webview.
@@ -36,6 +41,8 @@ export default function App() {
   // Tracks whether the last triggered analysis used GitLab resolution.
   // Live-regen on file save will re-use this mode automatically.
   const [gitlabMode, setGitlabMode] = useState(false);
+  const [downstreamPipelines, setDownstreamPipelines] = useState<Record<string, Pipeline>>({});
+  const [downstreamNav, setDownstreamNav] = useState<DownstreamNav | null>(null);
 
   // VSCode extension integration: listen for messages from the extension host.
   // Also used by the extension to deliver analysis results.
@@ -44,8 +51,12 @@ export default function App() {
       const msg = event.data;
       if (msg?.type === "pipeline") {
         setPipeline(msg.data);
+        setDownstreamPipelines({});
+        setDownstreamNav(null);
         setError(null);
         setLoading(false);
+      } else if (msg?.type === "downstream-pipeline") {
+        setDownstreamPipelines((prev) => ({ ...prev, [msg.jobName]: msg.pipeline }));
       } else if (msg?.type === "error") {
         setError(msg.data);
         setPipeline(EMPTY_PIPELINE);
@@ -86,11 +97,18 @@ export default function App() {
     return vars;
   }, []);
 
+  const onViewDownstream = useCallback((jobName: string) => {
+    const dp = downstreamPipelines[jobName];
+    if (dp) setDownstreamNav({ jobName, pipeline: dp });
+  }, [downstreamPipelines]);
+
   const analyze = useCallback(async () => {
     if (!conditions.yaml) return;
     setLoading(true);
     setError(null);
     setSelectedJob(null);
+    setDownstreamPipelines({});
+    setDownstreamNav(null);
 
     const payload: PipelineInput = {
       yaml: conditions.yaml,
@@ -179,8 +197,11 @@ export default function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(!vscodeApi);
 
-  const enabledCount = pipeline.jobs.filter((j) => j.enabled).length;
-  const totalCount = pipeline.jobs.length;
+  // When in downstream nav, all views operate on the downstream pipeline.
+  const activePipeline = downstreamNav?.pipeline ?? pipeline;
+
+  const enabledCount = activePipeline.jobs.filter((j) => j.enabled).length;
+  const totalCount = activePipeline.jobs.length;
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100">
@@ -213,6 +234,20 @@ export default function App() {
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* toolbar */}
         <div className="flex items-center gap-4 px-4 py-2 text-xs border-b border-zinc-800 bg-zinc-900">
+          {/* downstream breadcrumb */}
+          {downstreamNav && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setDownstreamNav(null); setSelectedJob(null); }}
+                className="text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                ← Main
+              </button>
+              <span className="text-zinc-600">/</span>
+              <span className="text-sky-400 font-mono">{downstreamNav.jobName}</span>
+            </div>
+          )}
+
           {/* view mode tabs */}
           {totalCount > 0 && (
             <div className="flex items-center gap-0.5 rounded bg-zinc-800 p-0.5">
@@ -238,12 +273,12 @@ export default function App() {
                 <span className="text-zinc-600"> / {totalCount} jobs enabled</span>
               </span>
               <span className="text-zinc-700">·</span>
-              <span className="text-zinc-400">{pipeline.stages.length} stages</span>
+              <span className="text-zinc-400">{activePipeline.stages.length} stages</span>
               {viewMode === "pipeline" && (
                 <>
                   <span className="text-zinc-700">·</span>
                   <span className="text-zinc-400">
-                    {pipeline.edges.filter((e) => e.type === "needs").length} explicit deps
+                    {activePipeline.edges.filter((e) => e.type === "needs").length} explicit deps
                   </span>
                 </>
               )}
@@ -251,7 +286,7 @@ export default function App() {
                 <>
                   <span className="text-zinc-700">·</span>
                   <span className="text-zinc-400">
-                    {(pipeline.artifact_edges ?? []).length} artifact flows
+                    {(activePipeline.artifact_edges ?? []).length} artifact flows
                   </span>
                 </>
               )}
@@ -282,9 +317,9 @@ export default function App() {
         </div>
 
         {/* warnings */}
-        {pipeline.warnings && pipeline.warnings.length > 0 && (
+        {activePipeline.warnings && activePipeline.warnings.length > 0 && (
           <div className="px-4 py-2 bg-amber-950/60 border-b border-amber-800/60 flex flex-col gap-0.5">
-            {pipeline.warnings.map((w, i) => (
+            {activePipeline.warnings.map((w, i) => (
               <p key={i} className="text-xs text-amber-400">⚠ {w}</p>
             ))}
           </div>
@@ -292,27 +327,27 @@ export default function App() {
 
         {/* main area */}
         <div className="relative flex flex-1 overflow-hidden">
-          {error ? (
+          {error && !downstreamNav ? (
             <div className="flex items-center justify-center flex-1">
               <div className="max-w-lg p-6 border border-red-800 rounded-lg bg-red-950">
                 <p className="mb-2 text-sm font-medium text-red-400">Parse error</p>
                 <pre className="text-xs text-red-300 whitespace-pre-wrap">{error}</pre>
               </div>
             </div>
-          ) : pipeline.jobs.length === 0 ? (
+          ) : activePipeline.jobs.length === 0 ? (
             <EmptyState />
           ) : enabledCount === 0 && !showDisabled ? (
             <NoJobsState onShowDisabled={() => setShowDisabled(true)} />
           ) : viewMode === "artifacts" ? (
             <ArtifactFlowView
-              pipeline={pipeline}
+              pipeline={activePipeline}
               selectedJob={selectedJob}
               onSelectJob={setSelectedJob}
               showDisabled={showDisabled}
             />
           ) : (
             <PipelineGraph
-              pipeline={pipeline}
+              pipeline={activePipeline}
               selectedJob={selectedJob}
               onSelectJob={setSelectedJob}
               showStageEdges={showStageEdges}
@@ -320,7 +355,12 @@ export default function App() {
             />
           )}
 
-          <JobDetails job={selectedJob} onClose={() => setSelectedJob(null)} />
+          <JobDetails
+            job={selectedJob}
+            onClose={() => setSelectedJob(null)}
+            downstreamPipeline={selectedJob?.trigger ? !!downstreamPipelines[selectedJob.name] : false}
+            onViewDownstream={onViewDownstream}
+          />
         </div>
       </div>
     </div>

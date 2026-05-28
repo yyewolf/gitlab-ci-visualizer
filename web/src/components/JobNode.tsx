@@ -113,6 +113,7 @@ function JobNode({ data }: NodeProps) {
           {job.release && <Badge color="emerald">release</Badge>}
           {job.coverage && <Badge color="indigo">coverage</Badge>}
           {job.pages && <Badge color="cyan">pages</Badge>}
+          {job.trigger && <Badge color="orange">trigger →</Badge>}
         </div>
 
         {/* image */}

@@ -237,6 +237,7 @@ class PreviewPanel {
             this.panel.webview.postMessage({ type: "error", data: result.error });
           } else {
             this.panel.webview.postMessage({ type: "pipeline", data: result });
+            this.resolveDownstreamPipelines(result, msg.payload).catch(() => {});
           }
           break;
         }
@@ -252,6 +253,7 @@ class PreviewPanel {
             this.panel.webview.postMessage({ type: "error", data: result.error });
           } else {
             this.panel.webview.postMessage({ type: "pipeline", data: result });
+            this.resolveDownstreamPipelines(result, msg.payload).catch(() => {});
           }
           break;
         }
@@ -396,6 +398,96 @@ class PreviewPanel {
       proc.stdin.write(JSON.stringify(payload));
       proc.stdin.end();
     });
+  }
+
+  private async resolveDownstreamPipelines(
+    analysisResult: Record<string, unknown>,
+    payload: { yaml: string; variables: Record<string, string> }
+  ): Promise<void> {
+    const jobs = analysisResult["jobs"] as Array<Record<string, unknown>> | undefined;
+    if (!jobs?.length) return;
+
+    const triggerJobs = jobs.filter((j) => j["trigger"] && j["enabled"]);
+    if (!triggerJobs.length) return;
+
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const config = await getGitlabConfig(this.context);
+
+    await Promise.all(triggerJobs.map(async (j) => {
+      const jobName = j["name"] as string;
+      const trigger = j["trigger"] as { project?: string; branch?: string; include?: string };
+
+      try {
+        let downstreamYaml: string | undefined;
+        let pipelineSource: string;
+
+        if (trigger.include) {
+          // Parent-child: read local file from workspace
+          if (!root) return;
+          const filePath = path.join(root, trigger.include);
+          if (!fs.existsSync(filePath)) return;
+          downstreamYaml = fs.readFileSync(filePath, "utf-8");
+          pipelineSource = "parent_pipeline";
+        } else if (trigger.project) {
+          // Multi-project: fetch raw YAML then resolve includes via CI lint API,
+          // mirroring how resolveWithGitlab works for the main pipeline.
+          if (!config.token) return;
+          const branch = trigger.branch || payload.variables["CI_COMMIT_BRANCH"] || "main";
+
+          // Step 1: fetch the raw pipeline file
+          const fileUrl = `${config.url}/api/v4/projects/${encodeURIComponent(trigger.project)}/repository/files/${encodeURIComponent(".gitlab-ci.yml")}/raw?ref=${encodeURIComponent(branch)}`;
+          let fileResponse: Response;
+          try {
+            fileResponse = await fetch(fileUrl, { headers: { "PRIVATE-TOKEN": config.token } });
+          } catch {
+            return;
+          }
+          if (!fileResponse.ok) return;
+          const rawYaml = await fileResponse.text();
+
+          // Step 2: resolve includes via CI lint (same call as resolveWithGitlab)
+          const lintUrl = `${config.url}/api/v4/projects/${encodeURIComponent(trigger.project)}/ci/lint`;
+          try {
+            const lintResponse = await fetch(lintUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": config.token },
+              body: JSON.stringify({ content: rawYaml, dry_run: true, ref: branch }),
+            });
+            if (lintResponse.ok) {
+              const lintData = await lintResponse.json() as { valid: boolean; merged_yaml?: string };
+              downstreamYaml = lintData.merged_yaml || rawYaml;
+            } else {
+              downstreamYaml = rawYaml;
+            }
+          } catch {
+            downstreamYaml = rawYaml;
+          }
+          pipelineSource = "pipeline";
+        } else {
+          return;
+        }
+
+        const downstreamVars: Record<string, string> = {
+          ...payload.variables,
+          CI_PIPELINE_SOURCE: pipelineSource,
+        };
+        // Remove parent-specific branch/tag when crossing project boundary
+        if (pipelineSource === "pipeline" && trigger.branch) {
+          downstreamVars["CI_COMMIT_BRANCH"] = trigger.branch;
+        }
+
+        const downstreamResult = await this.runAnalysis({ yaml: downstreamYaml, variables: downstreamVars });
+        if ("error" in downstreamResult && downstreamResult.error) return;
+
+        this.panel.webview.postMessage({
+          type: "downstream-pipeline",
+          jobName,
+          pipeline: downstreamResult,
+        });
+      } catch {
+        // Silently skip unresolvable downstream pipelines
+      }
+    }));
   }
 
   private resolveBinary(): string | undefined {

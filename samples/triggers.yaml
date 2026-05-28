@@ -1,0 +1,61 @@
+stages:
+  - build
+  - test
+  - deploy
+  - notify
+
+build-app:
+  stage: build
+  script:
+    - echo "Building application"
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 day
+
+unit-tests:
+  stage: test
+  needs:
+    - build-app
+  script:
+    - echo "Running unit tests"
+
+integration-tests:
+  stage: test
+  needs:
+    - build-app
+  script:
+    - echo "Running integration tests"
+
+# Parent-child trigger: child pipeline YAML lives in the same repo.
+# In VS Code, opening this file and clicking "Analyze pipeline" will
+# automatically resolve and show the child pipeline when you click this job.
+deploy-infra:
+  stage: deploy
+  needs:
+    - unit-tests
+    - integration-tests
+  trigger:
+    include: .gitlab-ci-infra.yml
+    strategy: depend
+
+# Multi-project trigger: downstream pipeline lives in another repo.
+# Requires a GitLab token — resolved automatically when using
+# "Analyze with GitLab" in VS Code.
+deploy-docs:
+  stage: deploy
+  needs:
+    - unit-tests
+  trigger:
+    project: my-org/docs-site
+    branch: main
+    strategy: depend
+
+# A plain job that runs after all deploys (no trigger).
+notify-slack:
+  stage: notify
+  needs:
+    - deploy-infra
+    - deploy-docs
+  script:
+    - echo "Notifying team"

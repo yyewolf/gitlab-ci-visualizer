@@ -38,6 +38,14 @@ export interface Job {
   pages?: boolean;
   needs_no_artifacts?: string[];
   dependencies?: string[];
+  trigger?: TriggerInfo;
+}
+
+export interface TriggerInfo {
+  project?: string;  // non-empty = multi-project trigger
+  branch?: string;
+  strategy?: string;
+  include?: string;  // non-empty = local parent-child trigger
 }
 
 export interface Artifacts {
