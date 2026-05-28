@@ -11,15 +11,28 @@ There's a VSCode extension that opens beside your file, and a standalone web app
 - Draws the pipeline as a graph with stage lanes and dependency edges
 - Evaluates `rules:`, `only:`, and `except:` against whatever conditions you set
 - Click a job to see the rule trace: every rule, whether it matched, what caused the job to run or be skipped
-- Resolves `extends:` and expands `parallel:matrix` into individual instances
+- Resolves `extends:` and expands `parallel:matrix` into individual instances shown as cards
+- Shows artifact flow as a separate view: which jobs produce artifacts and how they pass through the pipeline
+- Surfaces job badges for `allow_failure`, `when`, `interruptible`, `retry`, `release`, `coverage`, `pages`, `trigger`, and more
 - Reads branches and CI variables from your config and offers them as suggestions
 - In VSCode: loads the open file, picks up your current git branch, and runs the analysis automatically
+- In VSCode with a GitLab token: resolves `include:` directives server-side and shows triggered downstream pipelines inline
 
 ---
 
 ## VSCode extension
 
-Open a `.yaml` or `.yml` in VSCode, then click the preview button in the editor title bar (or run "Preview GitLab CI" from the command palette). The panel opens beside your file with the content already loaded and your current branch filled in. Analysis runs on its own, but there's a button if you need to re-run.
+Open a `.yaml` or `.yml` in VSCode, then click the preview button in the editor title bar (or run **Preview GitLab CI** from the command palette). The panel opens beside your file with the content already loaded and your current branch filled in. Analysis runs on its own, but there's a button if you need to re-run.
+
+### GitLab integration
+
+Run **GitLab CI: Configure Authentication** from the command palette to store a Personal Access Token. With a token configured:
+
+- **Analyze with GitLab** - resolves all `include:` files via the CI lint API and shows the full merged pipeline
+- **Triggered downstream pipelines** - jobs with `trigger:` automatically resolve their downstream pipeline:
+  - `trigger: {include: child.yml}` reads the file from your workspace (no token needed)
+  - `trigger: {project: group/project}` fetches and lints the downstream project via the GitLab API
+  - Click the trigger job, then **View downstream pipeline →** to navigate into it
 
 ### Installing from a .vsix file
 
@@ -40,7 +53,7 @@ You need Go and Node.
 cd web && npm install && npm run build && cd ..
 
 # Run the server
-go run ./cmd -serve :3001
+go run . -serve :3001
 ```
 
 Open `http://localhost:3001`, paste YAML, set conditions, click Analyze.
@@ -82,12 +95,14 @@ npm run package-all
 - `rules:` - `if` expressions with `==`, `!=`, `=~`, `!~`, `&&`, `||`, null checks
 - `only:` / `except:` - refs, branches, tags, merge requests, schedules, regex patterns
 - `extends:` - single and multi-parent inheritance, child wins on conflicts
-- `parallel:matrix` - full cartesian product
-- `needs:` - explicit dependencies, shown as direct edges
+- `parallel:matrix` - full cartesian product, instances shown as cards on click
+- `needs:` - explicit dependencies shown as direct edges; `needs[].artifacts: false` tracked
+- `dependencies:` - explicit artifact source override
 - `when:` - `on_success`, `on_failure`, `always`, `manual`, `never`
 - `.pre` / `.post` stages - GitLab drops them when no middle-stage job runs
+- `trigger:` - parsed and shown as a badge; downstream pipeline resolved in VSCode
 
-It doesn't fetch `include:` files, evaluate `changes:` or `exists:` (both assumed true), or handle multi-project pipelines.
+`changes:` and `exists:` are both assumed true (no filesystem context).
 
 ---
 
