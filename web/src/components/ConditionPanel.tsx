@@ -77,6 +77,9 @@ export default function ConditionPanel({ state, onChange, onAnalyze, onAnalyzeWi
             <button onClick={() => loadSample("artifact-flow.yaml")} className={btn}>
               Artifact flow
             </button>
+            <button onClick={() => loadSample("matrix.yaml")} className={btn}>
+              Matrix
+            </button>
             <button onClick={() => fileRef.current?.click()} className={btn}>
               Load file…
             </button>

@@ -1,4 +1,4 @@
-import type { Job } from "../types";
+import type { Job, MatrixInstance } from "../types";
 
 interface Props {
   job: Job | null;
@@ -78,22 +78,9 @@ export default function JobDetails({ job, onClose }: Props) {
 
         {/* parallel/matrix */}
         {job.parallel_count != null && job.parallel_count > 0 && (
-          <Section title={job.matrix_instances?.length ? "Matrix" : "Parallel"}>
-            {job.matrix_instances?.length ? (
-              job.matrix_instances.map((inst) => (
-                <div key={inst.name} className="mb-1 p-1.5 bg-zinc-800 rounded">
-                  <p className="text-violet-300 font-mono text-[10px]">{inst.name}</p>
-                  {Object.entries(inst.variables).map(([k, v]) => (
-                    <p key={k} className="text-zinc-400 text-[10px]">
-                      {k}={v}
-                    </p>
-                  ))}
-                </div>
-              ))
-            ) : (
-              <Row label="Count">{job.parallel_count}</Row>
-            )}
-          </Section>
+          job.matrix_instances?.length
+            ? <MatrixSection job={job} instances={job.matrix_instances} />
+            : <ParallelSection job={job} />
         )}
 
         {/* variables */}
@@ -133,6 +120,71 @@ export default function JobDetails({ job, onClose }: Props) {
         )}
       </div>
     </aside>
+  );
+}
+
+function MatrixSection({ job, instances }: { job: Job; instances: MatrixInstance[] }) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Matrix</p>
+        <span className="text-[10px] text-zinc-600">{instances.length} instances</span>
+      </div>
+      <div className="space-y-1.5">
+        {instances.map((inst) => {
+          const varEntries = Object.entries(inst.variables);
+          return (
+            <div
+              key={inst.name}
+              className="rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2.5 py-2 hover:border-zinc-600 transition-colors"
+            >
+              {/* instance name row */}
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${job.enabled ? "bg-emerald-500" : "bg-zinc-600"}`} />
+                <span className="font-mono text-[10px] text-zinc-200 break-all leading-snug">
+                  {job.name} <span className="text-zinc-500">{inst.name}</span>
+                </span>
+              </div>
+              {/* variable chips */}
+              <div className="flex flex-wrap gap-1 pl-3">
+                {varEntries.map(([k, v]) => (
+                  <span
+                    key={k}
+                    className="inline-flex items-center gap-1 bg-zinc-700 rounded px-1.5 py-0.5 text-[9px] leading-none"
+                  >
+                    <span className="text-zinc-400">{k}:</span>
+                    <span className="text-violet-300 font-mono">{v}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ParallelSection({ job }: { job: Job }) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 mb-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Parallel</p>
+        <span className="text-[10px] text-zinc-600">{job.parallel_count} instances</span>
+      </div>
+      <div className="space-y-1">
+        {Array.from({ length: job.parallel_count ?? 0 }, (_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-2 rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2.5 py-1.5 hover:border-zinc-600 transition-colors"
+          >
+            <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${job.enabled ? "bg-emerald-500" : "bg-zinc-600"}`} />
+            <span className="font-mono text-[10px] text-zinc-200">{job.name}</span>
+            <span className="ml-auto text-[9px] text-zinc-500">{i + 1}/{job.parallel_count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

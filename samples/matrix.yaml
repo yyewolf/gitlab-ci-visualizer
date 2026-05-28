@@ -1,0 +1,76 @@
+stages:
+  - build
+  - test
+  - report
+
+# Simple parallel job — same job runs N times concurrently, no variable differences.
+lint:
+  stage: build
+  parallel: 3
+  script:
+    - echo "Linting shard $CI_NODE_INDEX of $CI_NODE_TOTAL"
+
+# Matrix across a single dimension.
+build:
+  stage: build
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64]
+        OS: [linux, darwin, windows]
+  script:
+    - echo "Building for $OS/$ARCH"
+  artifacts:
+    paths:
+      - bin/$OS-$ARCH/
+    expire_in: 1 day
+
+# Matrix across two independent dimensions — produces a cross-product.
+# 2 runtimes × 3 DB engines = 6 instances.
+integration-test:
+  stage: test
+  needs:
+    - job: build
+      artifacts: false
+  parallel:
+    matrix:
+      - RUNTIME: [node18, node20]
+        DB: [postgres, mysql, sqlite]
+  script:
+    - echo "Testing $RUNTIME against $DB"
+  artifacts:
+    reports:
+      junit: test-results-$RUNTIME-$DB.xml
+
+# Matrix with a rules condition — only the python3.12 instance runs on main.
+unit-test:
+  stage: test
+  parallel:
+    matrix:
+      - PYTHON: [python3.10, python3.11, python3.12]
+  script:
+    - echo "Running tests on $PYTHON"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      variables:
+        PYTHON: python3.12
+      when: on_success
+    - when: on_success
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage-$PYTHON.xml
+
+# Single job that waits for all matrix instances before producing the report.
+coverage-report:
+  stage: report
+  needs:
+    - job: unit-test
+    - job: integration-test
+  script:
+    - echo "Merging coverage reports"
+  coverage: '/Total coverage: \d+\.\d+%/'
+  artifacts:
+    paths:
+      - coverage-merged.html
+    expire_in: 1 week
