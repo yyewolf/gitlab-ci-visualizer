@@ -80,7 +80,7 @@ func (c Config) Lint(ctx context.Context, content, project, ref string) (LintRes
 	if err != nil {
 		return LintResult{}, &APIError{Message: fmt.Sprintf("failed to reach GitLab at %s: %v", c.URL, err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
@@ -123,7 +123,7 @@ func (c Config) FetchRawFile(ctx context.Context, project, filePath, ref string)
 	if err != nil {
 		return "", &APIError{Message: fmt.Sprintf("failed to reach GitLab at %s: %v", c.URL, err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", &APIError{Status: resp.StatusCode, Message: fmt.Sprintf("failed to fetch %s (HTTP %d)", filePath, resp.StatusCode)}
@@ -148,7 +148,7 @@ func (c Config) ValidateToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", &APIError{Message: fmt.Sprintf("failed to reach GitLab at %s: %v", c.URL, err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return "", &APIError{Status: 401, Message: "unauthorized (401): token is invalid or expired"}

@@ -89,7 +89,7 @@ func Serve(ctx context.Context, opts Options, started func(url string)) error {
 
 	go func() {
 		<-ctx.Done()
-		srv.Close()
+		_ = srv.Close()
 	}()
 
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
