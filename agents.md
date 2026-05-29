@@ -8,6 +8,8 @@ Context document for AI agents working in this repository.
 
 Takes a `.gitlab-ci.yml`, evaluates which jobs run under given conditions (branch, pipeline source, custom variables), and renders the pipeline as an interactive graph. Delivered as both a VSCode extension and a standalone web app.
 
+In @.claude/decisions.md you will find a decision log, always improve agents.md and decisions.md upon changes.
+
 ---
 
 ## Architecture
