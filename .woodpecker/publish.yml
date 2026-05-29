@@ -42,11 +42,11 @@ steps:
   image: golang:latest
   commands:
   - mkdir -p vscode/bin
-  - CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-linux-amd64       .
-  - CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-linux-arm64       .
-  - CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-amd64      .
-  - CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-arm64      .
-  - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-windows-amd64.exe .
+  - CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -o vscode/bin/glvis-linux-amd64       .
+  - CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -o vscode/bin/glvis-linux-arm64       .
+  - CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o vscode/bin/glvis-darwin-amd64      .
+  - CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o vscode/bin/glvis-darwin-arm64      .
+  - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o vscode/bin/glvis-windows-amd64.exe .
 
 - name: package-and-publish
   image: node:22-alpine
