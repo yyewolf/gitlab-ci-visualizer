@@ -112,6 +112,8 @@ export default function PipelineGraph({
   );
 
   const onNodeMouseEnter: NodeMouseHandler = useCallback((_, node) => {
+    // Stage band nodes aren't jobs — hovering them shouldn't dim the graph.
+    if (node.id.startsWith("__stage__")) return;
     setHoveredJobName(node.id);
   }, []);
 

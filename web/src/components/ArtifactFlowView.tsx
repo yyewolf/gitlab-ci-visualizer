@@ -11,6 +11,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { Pipeline, Job, Edge } from "../types";
 import ArtifactJobNode, { type ArtifactJobNodeData } from "./ArtifactJobNode";
+import StageBandNode, { type StageBandData } from "./StageBandNode";
 
 interface Props {
   pipeline: Pipeline;
@@ -22,10 +23,11 @@ interface Props {
 const NODE_W = 208;
 const NODE_H = 80;
 const STAGE_GAP = 80;
-const JOB_GAP = 12;
+const JOB_GAP = 16;
 const STAGE_HEADER_H = 32;
+const STAGE_TOP_PAD = 20; // gap between the stage-name header and the first job
 
-const nodeTypes = { artifactJob: ArtifactJobNode };
+const nodeTypes = { artifactJob: ArtifactJobNode, stageBand: StageBandNode };
 
 export default function ArtifactFlowView({
   pipeline,
@@ -35,7 +37,7 @@ export default function ArtifactFlowView({
 }: Props) {
   const [hoveredJobName, setHoveredJobName] = useState<string | null>(null);
 
-  const { baseNodes, baseFlowEdges, visibleArtifactEdges, visibleStages, visibleJobNames, inFlowSet } =
+  const { baseNodes, stageNodes, baseFlowEdges, visibleArtifactEdges, visibleJobNames, inFlowSet } =
     useMemo(() => buildGraph(pipeline, showDisabled), [pipeline, showDisabled]);
 
   const hoveredJobEnabled = useMemo(() => {
@@ -48,27 +50,31 @@ export default function ArtifactFlowView({
     return computeAncestors(hoveredJobName, visibleArtifactEdges, visibleJobNames);
   }, [hoveredJobName, hoveredJobEnabled, visibleArtifactEdges, visibleJobNames]);
 
+  // Merge hover/selection state into nodes. Stage band nodes are prepended
+  // (and carry zIndex: -1) so they render behind the job nodes.
   const nodes: Node[] = useMemo(
     () =>
-      baseNodes.map((n) => {
-        const isHovering = hoveredJobName != null && hoveredJobEnabled;
-        const onPath = ancestorPath?.jobs.has(n.id) ?? false;
-        return {
-          ...n,
-          data: {
-            ...(n.data as ArtifactJobNodeData),
-            isSelected: n.id === selectedJob?.name,
-            isHighlighted: n.id === hoveredJobName,
-            isAncestor: onPath,
-            // When hovering: dim everything not on the highlighted path.
-            // When idle: dim jobs outside the artifact flow.
-            isDimmed: isHovering
-              ? n.id !== hoveredJobName && !onPath
-              : !inFlowSet.has(n.id),
-          } satisfies ArtifactJobNodeData,
-        };
-      }),
-    [baseNodes, selectedJob, hoveredJobName, hoveredJobEnabled, ancestorPath, inFlowSet],
+      stageNodes.concat(
+        baseNodes.map((n) => {
+          const isHovering = hoveredJobName != null && hoveredJobEnabled;
+          const onPath = ancestorPath?.jobs.has(n.id) ?? false;
+          return {
+            ...n,
+            data: {
+              ...(n.data as ArtifactJobNodeData),
+              isSelected: n.id === selectedJob?.name,
+              isHighlighted: n.id === hoveredJobName,
+              isAncestor: onPath,
+              // When hovering: dim everything not on the highlighted path.
+              // When idle: dim jobs outside the artifact flow.
+              isDimmed: isHovering
+                ? n.id !== hoveredJobName && !onPath
+                : !inFlowSet.has(n.id),
+            } satisfies ArtifactJobNodeData,
+          };
+        }),
+      ),
+    [stageNodes, baseNodes, selectedJob, hoveredJobName, hoveredJobEnabled, ancestorPath, inFlowSet],
   );
 
   const edges: FlowEdge[] = useMemo(() => {
@@ -97,7 +103,11 @@ export default function ArtifactFlowView({
     },
     [pipeline, onSelectJob],
   );
-  const onNodeMouseEnter: NodeMouseHandler = useCallback((_, node) => setHoveredJobName(node.id), []);
+  const onNodeMouseEnter: NodeMouseHandler = useCallback((_, node) => {
+    // Stage band nodes aren't jobs — hovering them shouldn't dim the graph.
+    if (node.id.startsWith("__stage__")) return;
+    setHoveredJobName(node.id);
+  }, []);
   const onNodeMouseLeave: NodeMouseHandler = useCallback(() => setHoveredJobName(null), []);
   const onPaneClick = useCallback(() => onSelectJob(null), [onSelectJob]);
 
@@ -132,10 +142,6 @@ export default function ArtifactFlowView({
         <Controls className="!bg-zinc-900 !border-zinc-700 [&>button]:!bg-zinc-900 [&>button]:!border-zinc-700 [&>button]:!text-zinc-400 [&>button:hover]:!bg-zinc-800" />
       </ReactFlow>
 
-      {visibleStages.length > 0 && (
-        <StageLegend stages={visibleStages} jobs={baseNodes.map((n) => (n.data as ArtifactJobNodeData).job)} />
-      )}
-
       <ArtifactLegend />
     </div>
   );
@@ -148,9 +154,9 @@ function buildGraph(
   showDisabled: boolean,
 ): {
   baseNodes: Node[];
+  stageNodes: Node[];
   baseFlowEdges: FlowEdge[];
   visibleArtifactEdges: Edge[];
-  visibleStages: string[];
   visibleJobNames: Set<string>;
   inFlowSet: Set<string>;
 } {
@@ -212,7 +218,7 @@ function buildGraph(
       type: "artifactJob",
       position: {
         x: si * (NODE_W + STAGE_GAP),
-        y: STAGE_HEADER_H + count * (NODE_H + JOB_GAP),
+        y: STAGE_HEADER_H + STAGE_TOP_PAD + count * (NODE_H + JOB_GAP),
       },
       data: {
         job,
@@ -226,6 +232,38 @@ function buildGraph(
       } satisfies ArtifactJobNodeData,
     };
   });
+
+  // Stage band background nodes: one tall column per visible stage, tiled
+  // edge-to-edge so their left borders form the vertical boundaries between
+  // stages. Drawn behind jobs and non-interactive.
+  const maxJobsInStage = Math.max(
+    1,
+    ...visibleStages.map((s) =>
+      visibleJobs.reduce((n, j) => (j.stage === s ? n + 1 : n), 0),
+    ),
+  );
+  const bandHeight =
+    STAGE_HEADER_H + STAGE_TOP_PAD + maxJobsInStage * (NODE_H + JOB_GAP);
+  const bandWidth = NODE_W + STAGE_GAP;
+  const stageNodes: Node[] = visibleStages.map((stage, i) => ({
+    id: `__stage__${stage}`,
+    type: "stageBand",
+    position: { x: i * (NODE_W + STAGE_GAP) - STAGE_GAP / 2, y: 0 },
+    width: bandWidth,
+    height: bandHeight,
+    draggable: false,
+    selectable: false,
+    focusable: false,
+    zIndex: -1,
+    className: "pointer-events-none",
+    style: { width: bandWidth, height: bandHeight },
+    data: {
+      label: stage,
+      count: stageJobCounts.get(stage) ?? 0,
+      index: i,
+      isLast: i === visibleStages.length - 1,
+    } satisfies StageBandData,
+  }));
 
   const baseFlowEdges: FlowEdge[] = visibleArtifactEdges.map((e) => {
     const sameStage = jobStage.get(e.from) === jobStage.get(e.to);
@@ -243,7 +281,7 @@ function buildGraph(
     };
   });
 
-  return { baseNodes, baseFlowEdges, visibleArtifactEdges, visibleStages, visibleJobNames, inFlowSet };
+  return { baseNodes, stageNodes, baseFlowEdges, visibleArtifactEdges, visibleJobNames, inFlowSet };
 }
 
 // ---- ancestor BFS (same logic as PipelineGraph) ----
@@ -276,26 +314,6 @@ function computeAncestors(
     }
   }
   return { jobs, edgeIds };
-}
-
-// ---- stage legend (same as PipelineGraph) ----
-
-function StageLegend({ stages, jobs }: { stages: string[]; jobs: Job[] }) {
-  const counts = new Map<string, number>();
-  for (const j of jobs) counts.set(j.stage, (counts.get(j.stage) ?? 0) + 1);
-  return (
-    <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-none z-10">
-      {stages.map((s) => {
-        const count = counts.get(s) ?? 0;
-        return (
-          <div key={s} className="bg-zinc-900/80 backdrop-blur border border-zinc-700 rounded px-2 py-1 text-center">
-            <p className="text-[10px] font-mono text-zinc-300">{s}</p>
-            <p className="text-[9px] text-zinc-600">{count} job{count !== 1 ? "s" : ""}</p>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function ArtifactLegend() {
