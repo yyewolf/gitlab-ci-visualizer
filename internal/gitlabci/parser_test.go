@@ -10,7 +10,7 @@ func TestToStrSlice(t *testing.T) {
 		input    interface{}
 		expected []string
 	}{
-		"nil":     {nil, nil},
+		"nil":     {nil, []string{}},
 		"string":  {"single", []string{"single"}},
 		"flat array": {
 			[]interface{}{"a", "b", "c"},
@@ -24,22 +24,22 @@ func TestToStrSlice(t *testing.T) {
 			[]interface{}{[]interface{}{[]interface{}{"nested"}}, "flat"},
 			[]string{"nested", "flat"},
 		},
-		"mixed nested arrays": {
-			[]interface{}{[]interface{}{"a", []interface{}{"b", []interface{}{"c"}}}, "d"},
-			[]string{"a", "b", "c", "d"},
-		},
-		"empty array": {
-			[]interface{}{},
-			nil,
-		},
+    "mixed nested arrays": {
+      []interface{}{[]interface{}{"a", []interface{}{"b", []interface{}{"c"}}}, "d"},
+      []string{"a", "b", "c", "d"},
+    },
+    "empty array": {
+      []interface{}{},
+      []string{},
+    },
 		"array with non-string elements skipped": {
 			[]interface{}{"a", 123, map[string]interface{}{"key": "value"}, "b"},
 			[]string{"a", "b"},
 		},
-		"empty nested arrays": {
-			[]interface{}{[]interface{}{}, []interface{}{[]interface{}{}}},
-			nil,
-		},
+    "empty nested arrays": {
+      []interface{}{[]interface{}{}, []interface{}{[]interface{}{}}},
+      []string{},
+    },
 	}
 
 	for name, tt := range tests {
@@ -57,7 +57,7 @@ func TestExtractNeeds(t *testing.T) {
 		input    interface{}
 		expected []string
 	}{
-		"nil":    {nil, nil},
+		"nil":    {nil, []string{}},
 		"string": {"single", []string{"single"}},
 		"flat array of strings": {
 			[]interface{}{"a", "b", "c"},
@@ -88,7 +88,7 @@ func TestExtractNeeds(t *testing.T) {
 		},
 		"empty array": {
 			[]interface{}{},
-			nil,
+			[]string{},
 		},
 		"array with non-needs elements skipped": {
 			[]interface{}{"a", 123, "b"},

@@ -173,15 +173,15 @@ func evalRules(raw map[string]interface{}, vars map[string]string) (when string,
 	}
 
 	if jobWhen == "never" {
-		return "never", false, nil
+		return "never", false, []RuleTrace{}
 	}
-	return jobWhen, true, nil
+	return jobWhen, true, []RuleTrace{}
 }
 
 func evalRulesBlock(rulesRaw interface{}, vars map[string]string) (string, bool, []RuleTrace) {
 	list, ok := rulesRaw.([]interface{})
 	if !ok {
-		return "on_success", true, nil
+		return "on_success", true, []RuleTrace{}
 	}
 
 	flat := make([]interface{}, 0, len(list))
@@ -200,10 +200,10 @@ func evalRulesBlock(rulesRaw interface{}, vars map[string]string) (string, bool,
 		flatten(item)
 	}
 	if len(flat) == 0 {
-		return "on_success", true, nil
+		return "on_success", true, []RuleTrace{}
 	}
 
-	var trace []RuleTrace
+	trace := []RuleTrace{}
 	for i, item := range flat {
 		m, ok := item.(map[string]interface{})
 		if !ok {
@@ -269,9 +269,9 @@ func evalOnlyExcept(onlyRaw, exceptRaw interface{}, vars map[string]string, jobW
 	}
 
 	if jobWhen == "never" {
-		return "never", false, nil
+		return "never", false, []RuleTrace{}
 	}
-	return jobWhen, true, nil
+	return jobWhen, true, []RuleTrace{}
 }
 
 func extractOnlyExceptRefs(raw interface{}) []string {
@@ -401,6 +401,8 @@ func extractVarMap(raw interface{}) map[string]string {
 }
 
 func extractNeedsAndArtifacts(raw interface{}) (needs []string, noArtifacts []string) {
+	needs = []string{}
+	noArtifacts = []string{}
 	var flatten func(val interface{})
 	flatten = func(val interface{}) {
 		switch v := val.(type) {
@@ -451,9 +453,9 @@ func computeArtifactEdges(jobs []Job, stageIdx map[string]int) []Edge {
 		}
 	}
 
-	seen := make(map[string]bool)
-	var edges []Edge
-	addEdge := func(from, to string) {
+  seen := make(map[string]bool)
+  edges := []Edge{}
+  addEdge := func(from, to string) {
 		if !producers[from] {
 			return
 		}
@@ -593,7 +595,7 @@ func extractArtifacts(raw interface{}) *Artifacts {
 }
 
 func extractNeeds(raw interface{}) []string {
-	var out []string
+	out := []string{}
 	var flatten func(val interface{})
 	flatten = func(val interface{}) {
 		switch v := val.(type) {

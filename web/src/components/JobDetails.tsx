@@ -44,10 +44,10 @@ export default function JobDetails({ job, onClose, downstreamPipeline, onViewDow
         {/* needs */}
         {job.has_explicit_needs && (
           <Section title="Needs">
-            {job.needs.length === 0 ? (
+            {(job.needs ?? []).length === 0 ? (
               <p className="text-zinc-500 italic">no prerequisites (starts immediately)</p>
             ) : (
-              job.needs.map((n) => (
+              (job.needs ?? []).map((n) => (
                 <p key={n} className="font-mono text-sky-400">{n}</p>
               ))
             )}

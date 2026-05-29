@@ -12,6 +12,39 @@ interface DownstreamNav {
 
 const EMPTY_PIPELINE: Pipeline = { stages: [], jobs: [], edges: [] };
 
+// Ensure every array field on a Job is really an array so components can call .map/.length safely.
+function normalizeJob(job: Job): Job {
+  return {
+    ...job,
+    needs: job.needs ?? [],
+    needs_no_artifacts: job.needs_no_artifacts ?? [],
+    rules_trace: job.rules_trace ?? [],
+    tags: job.tags ?? [],
+    dependencies: job.dependencies ?? [],
+    matrix_instances: job.matrix_instances ?? [],
+    artifacts: job.artifacts
+      ? {
+          ...job.artifacts,
+          paths: job.artifacts.paths ?? [],
+          reports: job.artifacts.reports ?? {},
+        }
+      : undefined,
+  };
+}
+
+function normalizePipeline(p: Pipeline): Pipeline {
+  return {
+    ...p,
+    stages: p.stages ?? [],
+    jobs: (p.jobs ?? []).map(normalizeJob),
+    edges: p.edges ?? [],
+    artifact_edges: p.artifact_edges ?? [],
+    suggested_branches: p.suggested_branches ?? [],
+    suggested_variables: p.suggested_variables ?? [],
+    warnings: p.warnings ?? [],
+  };
+}
+
 // Acquire the VSCode API once at module level - only available inside a webview.
 const vscodeApi = (() => {
   try {
@@ -50,13 +83,13 @@ export default function App() {
     const handler = (event: MessageEvent) => {
       const msg = event.data;
       if (msg?.type === "pipeline") {
-        setPipeline(msg.data);
+        setPipeline(normalizePipeline(msg.data));
         setDownstreamPipelines({});
         setDownstreamNav(null);
         setError(null);
         setLoading(false);
       } else if (msg?.type === "downstream-pipeline") {
-        setDownstreamPipelines((prev) => ({ ...prev, [msg.jobName]: msg.pipeline }));
+        setDownstreamPipelines((prev) => ({ ...prev, [msg.jobName]: normalizePipeline(msg.pipeline) }));
       } else if (msg?.type === "error") {
         setError(msg.data);
         setPipeline(EMPTY_PIPELINE);
@@ -134,7 +167,7 @@ export default function App() {
         setError(data.error);
         setPipeline(EMPTY_PIPELINE);
       } else {
-        setPipeline(data);
+        setPipeline(normalizePipeline(data));
       }
     } catch (e) {
       setError(String(e));
@@ -173,7 +206,7 @@ export default function App() {
         setError(data.error);
         setPipeline(EMPTY_PIPELINE);
       } else {
-        setPipeline(data);
+        setPipeline(normalizePipeline(data));
       }
     } catch (e) {
       setError(String(e));
