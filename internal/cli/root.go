@@ -8,8 +8,12 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"strings"
+
 	"github.com/spf13/cobra"
 
+	"github.com/yyewolf/gitlab-ci-visualizer/internal/auth"
+	"github.com/yyewolf/gitlab-ci-visualizer/internal/gitlab"
 	"github.com/yyewolf/gitlab-ci-visualizer/internal/server"
 )
 
@@ -44,6 +48,7 @@ func Execute(assets Assets) error {
 				WebFS:     assets.WebFS,
 				SamplesFS: assets.SamplesFS,
 				File:      resolved,
+				GitLab:    gitlabConfig(),
 			}
 
 			return server.Serve(ctx, opts, func(url string) {
@@ -61,6 +66,26 @@ func Execute(assets Assets) error {
 	root.AddCommand(loginCmd())
 
 	return root.Execute()
+}
+
+// gitlabConfig resolves the GitLab instance + token. Env vars
+// (GLVIS_GITLAB_URL / GLVIS_GITLAB_TOKEN) win — they're how the VSCode extension
+// hands a per-launch token to the server — otherwise it falls back to the
+// credentials stored by `glvis login`.
+func gitlabConfig() gitlab.Config {
+	url := strings.TrimRight(os.Getenv("GLVIS_GITLAB_URL"), "/")
+	if url == "" {
+		url = "https://gitlab.com"
+	}
+
+	if token := os.Getenv("GLVIS_GITLAB_TOKEN"); token != "" {
+		return gitlab.Config{URL: url, Token: token}
+	}
+
+	if creds, err := auth.Load(url); err == nil {
+		return gitlab.Config{URL: creds.Instance, Token: creds.Token}
+	}
+	return gitlab.Config{URL: url}
 }
 
 // resolveFile returns the explicit --file if given, otherwise the CWD

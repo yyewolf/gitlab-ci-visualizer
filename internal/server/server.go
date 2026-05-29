@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/yyewolf/gitlab-ci-visualizer/internal/gitlab"
 	"github.com/yyewolf/gitlab-ci-visualizer/internal/gitlabci"
 )
 
@@ -26,6 +27,11 @@ type Options struct {
 	// File is the autodetected/--file .gitlab-ci.yml path, surfaced via
 	// /api/initial so the frontend can self-load. May be empty.
 	File string
+	// GitLab is the instance + token used for include/downstream resolution.
+	GitLab gitlab.Config
+	// WorkDir is the directory used for git-based project detection and for
+	// resolving local trigger:include files. Defaults to the process CWD.
+	WorkDir string
 }
 
 // initialResponse is what GET /api/initial returns to the frontend.
@@ -51,6 +57,8 @@ func Serve(ctx context.Context, opts Options, started func(url string)) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/analyze", handleAnalyze)
 	mux.HandleFunc("/api/initial", handleInitial(opts.File))
+	mux.HandleFunc("/api/resolve", handleResolve(opts))
+	mux.HandleFunc("/api/downstream", handleDownstream(opts))
 
 	// Sample YAML files.
 	mux.HandleFunc("/samples/", func(w http.ResponseWriter, r *http.Request) {

@@ -108,6 +108,32 @@ export default function App() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  // Standalone (glvis CLI) mode: ask the server for the autodetected/--file
+  // .gitlab-ci.yml and current branch, then auto-analyze.
+  useEffect(() => {
+    if (vscodeApi) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/initial");
+        if (!res.ok) return;
+        const data = (await res.json()) as { yaml?: string; branch?: string };
+        if (cancelled || !data.yaml) return;
+        setConditions((c) => ({
+          ...c,
+          yaml: data.yaml as string,
+          ...(data.branch ? { branch: data.branch } : {}),
+        }));
+        setPendingAnalyze(true);
+      } catch {
+        // No initial file available - user can paste manually.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const keys = pipeline.suggested_variables;
     if (!keys?.length) return;
@@ -194,26 +220,71 @@ export default function App() {
       return;
     }
 
-    // Standalone web mode has no GitLab proxy - fall back to local analysis.
+    // Standalone (glvis CLI) mode: the Go server resolves include: via the
+    // GitLab CI lint API, then we analyze the merged YAML and resolve any
+    // downstream trigger pipelines.
+    setSelectedJob(null);
+    setDownstreamPipelines({});
+    setDownstreamNav(null);
     try {
-      const res = await fetch("/api/analyze", {
+      const resolveRes = await fetch("/api/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+      });
+      if (!resolveRes.ok) {
+        setError(await resolveRes.text());
+        setPipeline(EMPTY_PIPELINE);
+        return;
+      }
+      const { resolved_yaml } = (await resolveRes.json()) as { resolved_yaml: string };
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yaml: resolved_yaml, variables: payload.variables }),
       });
       const data: Pipeline = await res.json();
       if (data.error) {
         setError(data.error);
         setPipeline(EMPTY_PIPELINE);
-      } else {
-        setPipeline(normalizePipeline(data));
+        return;
       }
+      const resolved = normalizePipeline(data);
+      setPipeline(resolved);
+      void resolveDownstream(resolved, payload.variables);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
   }, [conditions, buildVars]);
+
+  // Standalone downstream resolution: for each enabled trigger job, ask the Go
+  // server to resolve + analyze its downstream pipeline and store the result.
+  const resolveDownstream = useCallback(
+    async (analyzed: Pipeline, variables: Record<string, string>) => {
+      const triggerJobs = analyzed.jobs.filter((j) => j.trigger && j.enabled);
+      await Promise.all(
+        triggerJobs.map(async (j) => {
+          try {
+            const res = await fetch("/api/downstream", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ trigger: j.trigger, variables }),
+            });
+            if (!res.ok) return;
+            const dp: Pipeline = await res.json();
+            if (dp.error) return;
+            setDownstreamPipelines((prev) => ({ ...prev, [j.name]: normalizePipeline(dp) }));
+          } catch {
+            // Silently skip unresolvable downstream pipelines.
+          }
+        })
+      );
+    },
+    []
+  );
 
   const [pendingAnalyze, setPendingAnalyze] = useState(false);
 
