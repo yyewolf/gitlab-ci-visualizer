@@ -143,7 +143,7 @@ func deepMergeInto(dst, src map[string]interface{}) {
 // ---- helpers ----
 
 func toStrSlice(v interface{}) []string {
-	var result []string
+	result := []string{}
 	var flatten func(val interface{})
 	flatten = func(val interface{}) {
 		switch vVal := val.(type) {
