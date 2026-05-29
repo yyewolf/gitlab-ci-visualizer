@@ -1,12 +1,12 @@
 package gitlabci
 
-// Input is what the binary receives as JSON on stdin.
+// Input is the request body for POST /api/analyze.
 type Input struct {
 	YAML      string            `json:"yaml"`
 	Variables map[string]string `json:"variables"`
 }
 
-// Output is the JSON written to stdout.
+// Output is the JSON returned from POST /api/analyze.
 type Output struct {
 	Stages             []string `json:"stages"`
 	Jobs               []Job    `json:"jobs"`

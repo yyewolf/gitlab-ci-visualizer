@@ -4,11 +4,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 declare -A PLATFORM_BIN=(
-  ["linux-x64"]="gitlab-ci-analyzer-linux-amd64"
-  ["linux-arm64"]="gitlab-ci-analyzer-linux-arm64"
-  ["darwin-x64"]="gitlab-ci-analyzer-darwin-amd64"
-  ["darwin-arm64"]="gitlab-ci-analyzer-darwin-arm64"
-  ["win32-x64"]="gitlab-ci-analyzer-windows-amd64.exe"
+  ["linux-x64"]="glvis-linux-amd64"
+  ["linux-arm64"]="glvis-linux-arm64"
+  ["darwin-x64"]="glvis-darwin-amd64"
+  ["darwin-arm64"]="glvis-darwin-arm64"
+  ["win32-x64"]="glvis-windows-amd64.exe"
 )
 
 # Stash all binaries so we can restore them between iterations and on exit.

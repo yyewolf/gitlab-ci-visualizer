@@ -2,7 +2,7 @@
 
 You paste a `.gitlab-ci.yml`, tell it what to simulate (branch, pipeline source, custom variables), and it draws the graph and tells you which jobs actually run.
 
-There's a VSCode extension that opens beside your file, and a standalone web app if you'd rather not use VSCode.
+There's a `glvis` CLI that opens it in your browser, and a VSCode extension that opens beside your file.
 
 ---
 
@@ -15,8 +15,8 @@ There's a VSCode extension that opens beside your file, and a standalone web app
 - Shows artifact flow as a separate view: which jobs produce artifacts and how they pass through the pipeline
 - Surfaces job badges for `allow_failure`, `when`, `interruptible`, `retry`, `release`, `coverage`, `pages`, `trigger`, and more
 - Reads branches and CI variables from your config and offers them as suggestions
-- In VSCode: loads the open file, picks up your current git branch, and runs the analysis automatically
-- In VSCode with a GitLab token: resolves `include:` directives server-side and shows triggered downstream pipelines inline
+- In VSCode and the `glvis` CLI: loads the file, picks up your current git branch, and runs the analysis automatically
+- With a GitLab token (`glvis login` or VSCode auth): resolves `include:` directives via the CI lint API and shows triggered downstream pipelines inline
 
 ---
 
@@ -44,19 +44,50 @@ code --install-extension gitlab-ci-visualizer-<platform>-0.1.0.vsix
 
 ---
 
-## Standalone web app
-
-You need Go and Node.
+## `glvis` CLI
 
 ```bash
-# Build the frontend
-cd web && npm install && npm run build && cd ..
+# In a repo with a .gitlab-ci.yml — starts a local server on a random port,
+# analyzes the file, and opens your browser.
+glvis
 
-# Run the server
-go run . -serve :3001
+# Point at a specific file
+glvis --file path/to/.gitlab-ci.yml
+
+# Don't open a browser (e.g. on a server)
+glvis --no-browser
 ```
 
-Open `http://localhost:3001`, paste YAML, set conditions, click Analyze.
+### GitLab authentication
+
+```bash
+glvis login
+```
+
+Prompts for your GitLab instance URL and a Personal Access Token (needs the
+`api` scope), validates it, and stores it in your OS keychain — falling back to
+`~/.config/glvis/credentials.json` (with a warning) when no keychain is
+available.
+
+Once logged in, running `glvis` in a repo whose `origin` remote points at that
+instance **resolves `include:` directives and downstream `trigger:` pipelines
+automatically** — no extra flag needed.
+
+You can also pass a token per-invocation with the `GLVIS_GITLAB_TOKEN` (and
+`GLVIS_GITLAB_URL`) environment variables, which take precedence over stored
+credentials.
+
+### Building the CLI from source
+
+You need Go 1.21+ and Node 18+.
+
+```bash
+# Build the frontend (embedded into the binary)
+cd web && npm install && npm run build && cd ..
+
+# Build the CLI
+go build -o glvis .
+```
 
 ---
 
@@ -100,7 +131,7 @@ npm run package-all
 - `dependencies:` - explicit artifact source override
 - `when:` - `on_success`, `on_failure`, `always`, `manual`, `never`
 - `.pre` / `.post` stages - GitLab drops them when no middle-stage job runs
-- `trigger:` - parsed and shown as a badge; downstream pipeline resolved in VSCode
+- `trigger:` - parsed and shown as a badge; downstream pipeline resolved with a GitLab token
 
 `changes:` and `exists:` are both assumed true (no filesystem context).
 
@@ -108,9 +139,9 @@ npm run package-all
 
 ## Stack
 
-- Go: parses the YAML, evaluates rules, serves the API
+- Go: parses the YAML, evaluates rules, resolves GitLab includes/downstream, serves the API (cobra CLI)
 - React + TypeScript + Tailwind + [React Flow](https://reactflow.dev/)
-- VSCode extension with the Go binary bundled per platform
+- VSCode extension that launches the Go server and talks to it over HTTP (binary bundled per platform)
 
 ## License
 

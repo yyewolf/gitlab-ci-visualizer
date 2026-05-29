@@ -13,8 +13,15 @@ Takes a `.gitlab-ci.yml`, evaluates which jobs run under given conditions (branc
 ## Architecture
 
 ```
-main.go                  - binary entry point (stdin/stdout JSON protocol or -serve HTTP)
-                           embeds web/dist and samples/ via //go:embed
+main.go                  - thin entry point: embeds web/dist + samples/ via
+                           //go:embed and calls internal/cli.Execute
+internal/cli/            - cobra commands: root (serve + autodetect/--file +
+                           random port + open browser), `glvis login`
+internal/server/         - HTTP server: /api/analyze, /api/initial,
+                           /api/resolve, /api/downstream
+internal/gitlab/         - GitLab client: CI lint (include resolution), raw file
+                           fetch, downstream resolution, project/instance detect
+internal/auth/           - credential store: OS keychain + ~/.config/glvis fallback
 internal/gitlabci/
   parser.go              - YAML → parsedCI (stages, variables, jobs map, extends resolution)
   pipeline.go            - parsedCI → Output (job resolution, rule eval, edge computation,
@@ -32,8 +39,9 @@ web/src/
     ArtifactJobNode.tsx  - job card for artifact view: producer indicator, artifact summary
     JobDetails.tsx       - right-side panel shown when a job is selected
     ConditionPanel.tsx   - left-side inputs (YAML source, branch, pipeline source, variables)
-vscode/src/extension.ts  - VSCode extension: spawns the Go binary, manages the webview,
-                           resolves downstream pipelines
+vscode/src/extension.ts  - VSCode extension: spawns `glvis` as a local server,
+                           manages the webview, and calls its HTTP endpoints
+                           (analyze/resolve/downstream) over the parsed port
 samples/
   ctf-gitlab-ci.yaml     - complex multi-stage CTF pipeline
   artifact-flow.yaml     - artifact flow showcase (build → test → package → deploy)
@@ -45,19 +53,22 @@ samples/
 
 ### Data flow
 
-1. User sets conditions (branch, pipeline source, variables) → frontend sends `PipelineInput` JSON to the Go binary via stdin (or HTTP POST `/api/analyze`).
-2. Go binary: `parser.go` unmarshals YAML and resolves `extends`, `pipeline.go` resolves jobs, evaluates rules, computes dependency edges, artifact edges, and extracts trigger info, emits `Output` JSON.
+1. User sets conditions (branch, pipeline source, variables) → frontend sends `PipelineInput` JSON to `POST /api/analyze`.
+2. Server: `parser.go` unmarshals YAML and resolves `extends`, `pipeline.go` resolves jobs, evaluates rules, computes dependency edges, artifact edges, and extracts trigger info, emits `Output` JSON.
 3. Frontend receives `Output` (stages, jobs, edges, artifact_edges, suggestions, warnings) and renders the selected view.
-4. *(VSCode only)* After step 3, the extension checks for trigger jobs with resolved `trigger` fields and asynchronously sends `downstream-pipeline` messages for each resolvable trigger.
+4. With a GitLab token, the frontend (standalone) or extension first calls `/api/resolve` to merge includes, then `/api/analyze`, then `/api/downstream` per trigger job to get each downstream pipeline (already analyzed).
 
-### Standalone binary mode (`-serve`)
+### Server mode (`glvis`)
 
-The binary embeds `web/dist` and `samples` at compile time. Running `gitlab-ci-visualizer -serve :3001` serves:
+The binary embeds `web/dist` and `samples` at compile time. Running `glvis` (or `glvis --addr=...`) binds a random free port and serves:
 - `GET /` - embedded React SPA
+- `GET /api/initial` - autodetected/--file YAML + branch + whether GitLab resolution is available
 - `POST /api/analyze` - analysis endpoint
+- `POST /api/resolve` - include resolution via the GitLab CI lint API
+- `POST /api/downstream` - resolve + analyze a trigger's downstream pipeline
 - `GET /samples/*` - embedded sample YAML files
 
-The frontend calls `/api/analyze` in both dev (Vite proxies it) and production.
+The frontend calls `/api/analyze` in both dev (Vite proxies it) and production. The VSCode extension spawns this server and calls the same endpoints over HTTP.
 
 ---
 
@@ -125,10 +136,10 @@ Handles `rules:if` expressions: `==`, `!=`, `=~`, `!~`, `&&`, `||`, null checks,
 cd web && npm install && npm run build && cd ..
 
 # Go binary (embeds web/dist and samples/ at compile time)
-go build -o gitlab-ci-visualizer .
+go build -o glvis .
 
-# Run the standalone web app
-./gitlab-ci-visualizer -serve :3001
+# Run it (random port, opens the browser, analyzes ./.gitlab-ci.yml)
+./glvis
 
 # VSCode extension (builds Go binaries for all platforms + bundles)
 cd vscode && npm install && npm run build && npm run package-all
@@ -137,8 +148,8 @@ cd vscode && npm install && npm run build && npm run package-all
 ### Dev mode (hot reload)
 
 ```bash
-# Terminal 1 - Go API + samples server
-go run . -serve :3002
+# Terminal 1 - Go API + samples server on a fixed port for the Vite proxy
+go run . --addr=127.0.0.1:3002 --no-browser
 
 # Terminal 2 - Vite dev server (proxies /api and /samples to :3002)
 cd web && npm run dev

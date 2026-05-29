@@ -63,7 +63,7 @@
     "compile": "tsc -p .",
     "watch": "tsc -p . --watch",
     "build-web": "cd ../web && npm run build && rm -rf ../vscode/media && cp -r dist ../vscode/media",
-    "build-go": "cd .. && GOOS=linux GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-linux-amd64 . && GOOS=linux GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-linux-arm64 . && GOOS=darwin GOARCH=arm64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-arm64 . && GOOS=darwin GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-darwin-amd64 . && GOOS=windows GOARCH=amd64 go build -o vscode/bin/gitlab-ci-analyzer-windows-amd64.exe .",
+    "build-go": "cd .. && GOOS=linux GOARCH=amd64 go build -o vscode/bin/glvis-linux-amd64 . && GOOS=linux GOARCH=arm64 go build -o vscode/bin/glvis-linux-arm64 . && GOOS=darwin GOARCH=arm64 go build -o vscode/bin/glvis-darwin-arm64 . && GOOS=darwin GOARCH=amd64 go build -o vscode/bin/glvis-darwin-amd64 . && GOOS=windows GOARCH=amd64 go build -o vscode/bin/glvis-windows-amd64.exe .",
     "build": "npm run build-web && npm run build-go && npm run compile",
     "package": "vsce package",
     "package-all": "bash scripts/package-all.sh",

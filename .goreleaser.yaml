@@ -7,9 +7,9 @@ before:
   - go mod tidy
 
 builds:
-- id: gitlab-ci-visualizer
+- id: glvis
   main: .
-  binary: gitlab-ci-visualizer
+  binary: glvis
   env:
   - CGO_ENABLED=0
   goos:

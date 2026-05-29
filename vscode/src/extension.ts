@@ -50,23 +50,6 @@ function getCurrentBranch(): string | undefined {
   }
 }
 
-function detectGitlabProject(workspaceRoot?: string): string | undefined {
-  if (!workspaceRoot) return undefined;
-  try {
-    const remote = execSync("git remote get-url origin", { cwd: workspaceRoot, timeout: 3000 })
-      .toString().trim();
-    // SSH: git@gitlab.com:group/project.git
-    const sshMatch = remote.match(/^git@[^:]+:(.+?)(?:\.git)?$/);
-    if (sshMatch) return sshMatch[1];
-    // HTTPS: https://gitlab.com/group/project.git
-    const url = new URL(remote);
-    const p = url.pathname.replace(/^\//, "").replace(/\.git$/, "");
-    return p || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function getGitlabConfig(context: vscode.ExtensionContext) {
   const cfg = vscode.workspace.getConfiguration("gitlab-ci-visualizer");
   const token = (await context.secrets.get("gitlabToken")) ?? "";
@@ -147,6 +130,9 @@ class PreviewPanel {
   private watchedUri: vscode.Uri | undefined;
   private fileWatcher: vscode.Disposable | undefined;
   private mode: AnalyzeMode;
+  // The local glvis server backing this panel (lazily started, killed on dispose).
+  private serverPromise: Promise<string> | undefined;
+  private serverProc: import("child_process").ChildProcess | undefined;
 
   static createOrShow(context: vscode.ExtensionContext, mode: AnalyzeMode = "local") {
     // Capture NOW - activeTextEditor becomes undefined once the webview takes focus.
@@ -204,6 +190,7 @@ class PreviewPanel {
     this.panel.onDidDispose(() => {
       PreviewPanel.currentPanel = undefined;
       this.fileWatcher?.dispose();
+      this.serverProc?.kill();
     });
 
     this.fileWatcher = vscode.workspace.onDidSaveTextDocument((doc) => {
@@ -261,145 +248,53 @@ class PreviewPanel {
     });
   }
 
+  // Resolves include: directives by asking the local glvis server (which calls
+  // the GitLab CI lint API). All GitLab logic lives in Go now.
   private async resolveWithGitlab(payload: {
     yaml: string;
     variables: Record<string, string>;
   }): Promise<{ resolvedYaml?: string; error?: string }> {
-    const config = await getGitlabConfig(this.context);
-
-    if (!config.token) {
-      return {
-        error:
-          "No GitLab token configured.\n\nRun the command \"GitLab CI: Configure Authentication\" (Ctrl+Shift+P) to set your Personal Access Token.",
-      };
-    }
-
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const project = detectGitlabProject(root);
-    const ref = payload.variables["CI_COMMIT_BRANCH"] || "main";
-    const baseUrl = config.url;
-
-    let apiUrl: string;
-    let requestBody: Record<string, unknown>;
-
-    if (project) {
-      apiUrl = `${baseUrl}/api/v4/projects/${encodeURIComponent(project)}/ci/lint`;
-      requestBody = { content: payload.yaml, dry_run: true, ref };
-    } else {
-      // No project: fall back to global lint (validates syntax but won't resolve includes)
-      apiUrl = `${baseUrl}/api/v4/ci/lint`;
-      requestBody = { content: payload.yaml };
-    }
-
-    let response: Response;
     try {
-      response = await fetch(apiUrl, {
+      const base = await this.getServer();
+      const res = await fetch(`${base}/api/resolve`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "PRIVATE-TOKEN": config.token,
-        },
-        body: JSON.stringify(requestBody),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
+      if (!res.ok) {
+        return { error: await res.text() };
+      }
+      const data = (await res.json()) as { resolved_yaml?: string };
+      return { resolvedYaml: data.resolved_yaml || payload.yaml };
     } catch (err) {
-      return { error: `Failed to reach GitLab at ${baseUrl}: ${String(err)}` };
+      return { error: `Failed to resolve via GitLab: ${String(err)}` };
     }
-
-    if (response.status === 401) {
-      return {
-        error:
-          "Unauthorized (HTTP 401): your GitLab Personal Access Token is invalid or expired.\n\nRun \"GitLab CI: Configure Authentication\" to update it.",
-      };
-    }
-    if (response.status === 403) {
-      return {
-        error:
-          "Forbidden (HTTP 403): you need at least Developer access on the GitLab project to resolve the pipeline.\n\nCheck your role on the project or use the plain \"Preview\" button for local-only analysis.",
-      };
-    }
-    if (response.status === 404) {
-      return {
-        error: `Project not found (HTTP 404): "${project}".\n\nCheck the gitlab-ci-visualizer.gitlabProject setting, or ensure the git remote points to the correct GitLab project.`,
-      };
-    }
-    if (!response.ok) {
-      const text = await response.text();
-      return { error: `GitLab API error (HTTP ${response.status}):\n${text}` };
-    }
-
-    const data = (await response.json()) as {
-      valid: boolean;
-      errors?: string[];
-      warnings?: string[];
-      merged_yaml?: string;
-    };
-
-    if (!data.valid && data.errors?.length) {
-      return { error: `GitLab validation errors:\n${data.errors.join("\n")}` };
-    }
-
-    return { resolvedYaml: data.merged_yaml || payload.yaml };
   }
 
+  // Analyzes a pipeline by POSTing to the local glvis server.
   private async runAnalysis(payload: {
     yaml: string;
     variables: Record<string, string>;
   }): Promise<Record<string, unknown>> {
-    return new Promise((resolve) => {
-      const bin = this.resolveBinary();
-      if (!bin) {
-        resolve({
-          error: "GitLab CI analyzer binary not found. Run 'npm run build-go' in the vscode directory.",
-          stages: [],
-          jobs: [],
-          edges: [],
-        });
-        return;
+    const fail = (error: string) => ({ error, stages: [], jobs: [], edges: [] });
+    try {
+      const base = await this.getServer();
+      const res = await fetch(`${base}/api/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        return fail(await res.text());
       }
-
-      const proc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
-      let stdout = "";
-      let stderr = "";
-
-      proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-      proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-
-      proc.on("error", (err) => {
-        resolve({
-          error: `Failed to start analyzer: ${err.message}`,
-          stages: [],
-          jobs: [],
-          edges: [],
-        });
-      });
-
-      proc.on("close", (code) => {
-        if (code !== 0) {
-          resolve({
-            error: stderr || `Analyzer exited with code ${code}`,
-            stages: [],
-            jobs: [],
-            edges: [],
-          });
-          return;
-        }
-        try {
-          resolve(JSON.parse(stdout));
-        } catch {
-          resolve({
-            error: "Failed to parse analyzer output",
-            stages: [],
-            jobs: [],
-            edges: [],
-          });
-        }
-      });
-
-      proc.stdin.write(JSON.stringify(payload));
-      proc.stdin.end();
-    });
+      return (await res.json()) as Record<string, unknown>;
+    } catch (err) {
+      return fail(`Failed to run analyzer: ${String(err)}`);
+    }
   }
 
+  // Resolves downstream trigger pipelines via the server's /api/downstream,
+  // which returns each one already analyzed.
   private async resolveDownstreamPipelines(
     analysisResult: Record<string, unknown>,
     payload: { yaml: string; variables: Record<string, string> }
@@ -410,84 +305,81 @@ class PreviewPanel {
     const triggerJobs = jobs.filter((j) => j["trigger"] && j["enabled"]);
     if (!triggerJobs.length) return;
 
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const config = await getGitlabConfig(this.context);
+    const base = await this.getServer();
 
     await Promise.all(triggerJobs.map(async (j) => {
       const jobName = j["name"] as string;
-      const trigger = j["trigger"] as { project?: string; branch?: string; include?: string };
-
+      const trigger = j["trigger"];
       try {
-        let downstreamYaml: string | undefined;
-        let pipelineSource: string;
-
-        if (trigger.include) {
-          // Parent-child: read local file from workspace
-          if (!root) return;
-          const filePath = path.join(root, trigger.include);
-          if (!fs.existsSync(filePath)) return;
-          downstreamYaml = fs.readFileSync(filePath, "utf-8");
-          pipelineSource = "parent_pipeline";
-        } else if (trigger.project) {
-          // Multi-project: fetch raw YAML then resolve includes via CI lint API,
-          // mirroring how resolveWithGitlab works for the main pipeline.
-          if (!config.token) return;
-          const branch = trigger.branch || payload.variables["CI_COMMIT_BRANCH"] || "main";
-
-          // Step 1: fetch the raw pipeline file
-          const fileUrl = `${config.url}/api/v4/projects/${encodeURIComponent(trigger.project)}/repository/files/${encodeURIComponent(".gitlab-ci.yml")}/raw?ref=${encodeURIComponent(branch)}`;
-          let fileResponse: Response;
-          try {
-            fileResponse = await fetch(fileUrl, { headers: { "PRIVATE-TOKEN": config.token } });
-          } catch {
-            return;
-          }
-          if (!fileResponse.ok) return;
-          const rawYaml = await fileResponse.text();
-
-          // Step 2: resolve includes via CI lint (same call as resolveWithGitlab)
-          const lintUrl = `${config.url}/api/v4/projects/${encodeURIComponent(trigger.project)}/ci/lint`;
-          try {
-            const lintResponse = await fetch(lintUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "PRIVATE-TOKEN": config.token },
-              body: JSON.stringify({ content: rawYaml, dry_run: true, ref: branch }),
-            });
-            if (lintResponse.ok) {
-              const lintData = await lintResponse.json() as { valid: boolean; merged_yaml?: string };
-              downstreamYaml = lintData.merged_yaml || rawYaml;
-            } else {
-              downstreamYaml = rawYaml;
-            }
-          } catch {
-            downstreamYaml = rawYaml;
-          }
-          pipelineSource = "pipeline";
-        } else {
-          return;
-        }
-
-        const downstreamVars: Record<string, string> = {
-          ...payload.variables,
-          CI_PIPELINE_SOURCE: pipelineSource,
-        };
-        // Remove parent-specific branch/tag when crossing project boundary
-        if (pipelineSource === "pipeline" && trigger.branch) {
-          downstreamVars["CI_COMMIT_BRANCH"] = trigger.branch;
-        }
-
-        const downstreamResult = await this.runAnalysis({ yaml: downstreamYaml, variables: downstreamVars });
-        if ("error" in downstreamResult && downstreamResult.error) return;
+        const res = await fetch(`${base}/api/downstream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ trigger, variables: payload.variables }),
+        });
+        if (!res.ok) return;
+        const pipeline = (await res.json()) as Record<string, unknown>;
+        if ("error" in pipeline && pipeline["error"]) return;
 
         this.panel.webview.postMessage({
           type: "downstream-pipeline",
           jobName,
-          pipeline: downstreamResult,
+          pipeline,
         });
       } catch {
         // Silently skip unresolvable downstream pipelines
       }
     }));
+  }
+
+  // getServer lazily starts a `glvis` server process (once per panel) and
+  // returns its base URL. The process is killed when the panel is disposed.
+  private getServer(): Promise<string> {
+    if (!this.serverPromise) {
+      this.serverPromise = this.startServer();
+    }
+    return this.serverPromise;
+  }
+
+  private async startServer(): Promise<string> {
+    const bin = this.resolveBinary();
+    if (!bin) {
+      throw new Error("glvis binary not found. Run 'npm run build-go' in the vscode directory.");
+    }
+    const config = await getGitlabConfig(this.context);
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+    return new Promise<string>((resolve, reject) => {
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        GLVIS_NO_BROWSER: "1",
+        GLVIS_GITLAB_URL: config.url,
+      };
+      if (config.token) env.GLVIS_GITLAB_TOKEN = config.token;
+
+      const proc = spawn(bin, ["--no-browser", "--addr=127.0.0.1:0"], { cwd: root, env });
+      this.serverProc = proc;
+
+      let buf = "";
+      let settled = false;
+      const scan = (d: Buffer) => {
+        if (settled) return;
+        buf += d.toString();
+        // The server logs "listening on http://127.0.0.1:PORT".
+        const m = buf.match(/http:\/\/127\.0\.0\.1:\d+/);
+        if (m) {
+          settled = true;
+          resolve(m[0]);
+        }
+      };
+      proc.stdout.on("data", scan);
+      proc.stderr.on("data", scan);
+      proc.on("error", (err) => {
+        if (!settled) { settled = true; reject(err); }
+      });
+      proc.on("exit", (code) => {
+        if (!settled) { settled = true; reject(new Error(`glvis exited before starting (code ${code})`)); }
+      });
+    });
   }
 
   private resolveBinary(): string | undefined {
@@ -496,14 +388,14 @@ class PreviewPanel {
 
     const key = `${platform}-${arch}`;
     const nameMap: Record<string, string> = {
-      "linux-x64":    "gitlab-ci-analyzer-linux-amd64",
-      "linux-arm64":  "gitlab-ci-analyzer-linux-arm64",
-      "darwin-x64":   "gitlab-ci-analyzer-darwin-amd64",
-      "darwin-arm64": "gitlab-ci-analyzer-darwin-arm64",
-      "win32-x64":    "gitlab-ci-analyzer-windows-amd64.exe",
+      "linux-x64":    "glvis-linux-amd64",
+      "linux-arm64":  "glvis-linux-arm64",
+      "darwin-x64":   "glvis-darwin-amd64",
+      "darwin-arm64": "glvis-darwin-arm64",
+      "win32-x64":    "glvis-windows-amd64.exe",
     };
 
-    const name = nameMap[key] ?? "gitlab-ci-analyzer-linux-amd64";
+    const name = nameMap[key] ?? "glvis-linux-amd64";
     const bundled = path.join(this.context.extensionUri.fsPath, "bin", name);
     if (fs.existsSync(bundled)) {
       return bundled;
