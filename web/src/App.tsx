@@ -438,6 +438,14 @@ export default function App() {
 
         {/* main area */}
         <div className="relative flex flex-1 overflow-hidden">
+          {/* loading indicator — top-right, overlays the graph */}
+          {loading && (
+            <div className="absolute top-3 right-3 z-20 flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900/80 px-2.5 py-1.5 shadow-lg backdrop-blur-sm pointer-events-none">
+              <Spinner />
+              <span className="text-xs text-zinc-300">Analyzing…</span>
+            </div>
+          )}
+
           {error && !downstreamNav ? (
             <div className="flex items-center justify-center flex-1">
               <div className="max-w-lg p-6 border border-red-800 rounded-lg bg-red-950">
@@ -475,6 +483,22 @@ export default function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg
+      className="animate-spin text-blue-400"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
   );
 }
 

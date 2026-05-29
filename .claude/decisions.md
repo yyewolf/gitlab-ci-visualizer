@@ -262,3 +262,8 @@ Skip if `--no-browser` is passed or `$GLVIS_NO_BROWSER` is set (useful for CI).
   (token from stdin, not argv → not visible in the process table) and a script-
   friendly `glvis auth status --instance X`. _Rationale: the extension drives
   these programmatically._
+- **2026-05-29** — Loading indicator is a small spinner chip overlaid at the
+  top-right of the graph area (driven by the existing `loading` state), rather
+  than a full-screen overlay. `pointer-events-none` so it never blocks graph
+  interaction. _Rationale: non-blocking feedback; the graph stays visible and
+  usable during re-analysis._
