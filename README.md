@@ -26,7 +26,7 @@ Open a `.yaml` or `.yml` in VSCode, then click the preview button in the editor 
 
 ### GitLab integration
 
-Run **GitLab CI: Configure Authentication** from the command palette to store a Personal Access Token. With a token configured:
+Run **GitLab CI: Configure Authentication** from the command palette to store a Personal Access Token. The token is kept in the same OS-keychain store the `glvis` CLI uses (keyed by instance), so logging in via the extension or `glvis login` is interchangeable — and you can store tokens for several GitLab instances at once. The extension resolves each repo against the instance its `origin` remote points at. With a token configured:
 
 - **Analyze with GitLab** - resolves all `include:` files via the CI lint API and shows the full merged pipeline
 - **Triggered downstream pipelines** - jobs with `trigger:` automatically resolve their downstream pipeline:

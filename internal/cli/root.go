@@ -66,6 +66,7 @@ func Execute(assets Assets) error {
 	root.Flags().BoolVar(&noBrowser, "no-browser", false, "do not open the browser on start")
 
 	root.AddCommand(loginCmd())
+	root.AddCommand(authCmd())
 
 	return root.Execute()
 }
@@ -89,7 +90,14 @@ func gitlabConfig(dir string) gitlab.Config {
 		return gitlab.Config{URL: url, Token: token}
 	}
 
-	instance := gitlab.DetectInstanceFromDir(dir)
+	// Instance precedence: explicit GLVIS_GITLAB_URL override, else the repo's
+	// origin remote, else gitlab.com. Credentials are loaded from the shared
+	// store (`glvis login`) for whichever instance we land on — this is what
+	// lets multiple GitLab instances coexist.
+	instance := strings.TrimRight(os.Getenv("GLVIS_GITLAB_URL"), "/")
+	if instance == "" {
+		instance = gitlab.DetectInstanceFromDir(dir)
+	}
 	if instance == "" {
 		instance = "https://gitlab.com"
 	}

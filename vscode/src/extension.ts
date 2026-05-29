@@ -20,8 +20,14 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 async function promptAuthIfNeeded(context: vscode.ExtensionContext) {
-  const token = await context.secrets.get("gitlabToken");
-  if (token) return;
+  const cfg = vscode.workspace.getConfiguration("gitlab-ci-visualizer");
+  const url = (cfg.get<string>("gitlabUrl") || "https://gitlab.com").replace(/\/$/, "");
+  try {
+    const res = await runGlvis(context, ["auth", "status", "--instance", url]);
+    if (res.code === 0) return; // already configured for this instance
+  } catch {
+    return; // binary missing - don't nag
+  }
 
   const action = await vscode.window.showInformationMessage(
     "GitLab CI Visualizer: configure your GitLab token to enable pipeline resolution with includes.",
@@ -50,13 +56,51 @@ function getCurrentBranch(): string | undefined {
   }
 }
 
-async function getGitlabConfig(context: vscode.ExtensionContext) {
-  const cfg = vscode.workspace.getConfiguration("gitlab-ci-visualizer");
-  const token = (await context.secrets.get("gitlabToken")) ?? "";
-  return {
-    url: (cfg.get<string>("gitlabUrl") || "https://gitlab.com").replace(/\/$/, ""),
-    token,
+// resolveBinary returns the path to the bundled glvis binary for this platform.
+function resolveBinary(context: vscode.ExtensionContext): string | undefined {
+  const key = `${process.platform}-${process.arch}`;
+  const nameMap: Record<string, string> = {
+    "linux-x64":    "glvis-linux-amd64",
+    "linux-arm64":  "glvis-linux-arm64",
+    "darwin-x64":   "glvis-darwin-amd64",
+    "darwin-arm64": "glvis-darwin-arm64",
+    "win32-x64":    "glvis-windows-amd64.exe",
   };
+  const name = nameMap[key] ?? "glvis-linux-amd64";
+  const bundled = path.join(context.extensionUri.fsPath, "bin", name);
+  return fs.existsSync(bundled) ? bundled : undefined;
+}
+
+interface GlvisResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+// runGlvis runs the bundled glvis CLI to completion, optionally piping stdin.
+// Used for credential management (login / auth status) so the CLI owns the
+// token store — keychain with file fallback, keyed by instance.
+function runGlvis(
+  context: vscode.ExtensionContext,
+  args: string[],
+  stdinData?: string
+): Promise<GlvisResult> {
+  return new Promise((resolve, reject) => {
+    const bin = resolveBinary(context);
+    if (!bin) {
+      reject(new Error("glvis binary not found. Run 'npm run build-go' in the vscode directory."));
+      return;
+    }
+    const proc = spawn(bin, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    proc.on("error", reject);
+    proc.on("close", (code: number | null) => resolve({ code: code ?? 0, stdout, stderr }));
+    if (stdinData !== undefined) proc.stdin.write(stdinData);
+    proc.stdin.end();
+  });
 }
 
 async function configureGitlabAuth(context: vscode.ExtensionContext) {
@@ -108,12 +152,26 @@ async function configureGitlabAuth(context: vscode.ExtensionContext) {
   });
   if (token === undefined) return;
 
+  // Remember the instance as the default for next time.
   await cfg.update("gitlabUrl", baseUrl, vscode.ConfigurationTarget.Global);
-  if (token) {
-    await context.secrets.store("gitlabToken", token);
-  }
+  if (!token) return;
 
-  vscode.window.showInformationMessage("GitLab CI Visualizer: authentication configured.");
+  // Store via the CLI so the keychain-backed, multi-instance store is the single
+  // source of truth (shared with `glvis` runs from the terminal).
+  try {
+    const res = await runGlvis(context, ["login", "--instance", baseUrl, "--stdin"], token);
+    if (res.code !== 0) {
+      vscode.window.showErrorMessage(
+        `GitLab login failed: ${res.stderr.trim() || res.stdout.trim() || `exit ${res.code}`}`
+      );
+      return;
+    }
+    vscode.window.showInformationMessage(
+      `GitLab CI Visualizer: ${res.stdout.trim() || "authentication configured."}`
+    );
+  } catch (err) {
+    vscode.window.showErrorMessage(`Failed to run glvis login: ${String(err)}`);
+  }
 }
 
 // ---- webview panel ----
@@ -341,20 +399,20 @@ class PreviewPanel {
   }
 
   private async startServer(): Promise<string> {
-    const bin = this.resolveBinary();
+    const bin = resolveBinary(this.context);
     if (!bin) {
       throw new Error("glvis binary not found. Run 'npm run build-go' in the vscode directory.");
     }
-    const config = await getGitlabConfig(this.context);
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
     return new Promise<string>((resolve, reject) => {
+      // No token/URL is passed: the server detects the GitLab instance from the
+      // repo's git remote and loads the matching credentials from the shared
+      // store (`glvis login`), so multiple instances work per-repo.
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         GLVIS_NO_BROWSER: "1",
-        GLVIS_GITLAB_URL: config.url,
       };
-      if (config.token) env.GLVIS_GITLAB_TOKEN = config.token;
 
       const proc = spawn(bin, ["--no-browser", "--addr=127.0.0.1:0"], { cwd: root, env });
       this.serverProc = proc;
@@ -382,27 +440,6 @@ class PreviewPanel {
     });
   }
 
-  private resolveBinary(): string | undefined {
-    const platform = process.platform;
-    const arch = process.arch;
-
-    const key = `${platform}-${arch}`;
-    const nameMap: Record<string, string> = {
-      "linux-x64":    "glvis-linux-amd64",
-      "linux-arm64":  "glvis-linux-arm64",
-      "darwin-x64":   "glvis-darwin-amd64",
-      "darwin-arm64": "glvis-darwin-arm64",
-      "win32-x64":    "glvis-windows-amd64.exe",
-    };
-
-    const name = nameMap[key] ?? "glvis-linux-amd64";
-    const bundled = path.join(this.context.extensionUri.fsPath, "bin", name);
-    if (fs.existsSync(bundled)) {
-      return bundled;
-    }
-
-    return undefined;
-  }
 
   private update() {
     this.panel.webview.html = this.buildHtml();
