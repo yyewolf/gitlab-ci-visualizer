@@ -36,7 +36,7 @@ func loginCmd() *cobra.Command {
 					huh.NewInput().
 						Title("Personal Access Token").
 						Description("Needs the \"api\" scope.").
-						Password(true).
+						EchoMode(huh.EchoModePassword).
 						Value(&token).
 						Validate(func(s string) error {
 							if strings.TrimSpace(s) == "" {
