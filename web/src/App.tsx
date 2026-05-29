@@ -117,13 +117,20 @@ export default function App() {
       try {
         const res = await fetch("/api/initial");
         if (!res.ok) return;
-        const data = (await res.json()) as { yaml?: string; branch?: string };
+        const data = (await res.json()) as {
+          yaml?: string;
+          branch?: string;
+          gitlab_available?: boolean;
+        };
         if (cancelled || !data.yaml) return;
         setConditions((c) => ({
           ...c,
           yaml: data.yaml as string,
           ...(data.branch ? { branch: data.branch } : {}),
         }));
+        // When the repo is hosted on a GitLab instance we have a token for,
+        // default to GitLab-resolved analysis so include: directives resolve.
+        if (data.gitlab_available) setGitlabMode(true);
         setPendingAnalyze(true);
       } catch {
         // No initial file available - user can paste manually.

@@ -39,6 +39,12 @@ type initialResponse struct {
 	YAML   string `json:"yaml"`
 	Branch string `json:"branch"`
 	File   string `json:"file"`
+	// GitLabAvailable is true when the server can resolve includes/downstream:
+	// a token is configured and the repo maps to a detectable project. The
+	// frontend uses this to default to GitLab-resolved analysis.
+	GitLabAvailable bool   `json:"gitlab_available"`
+	GitLabInstance  string `json:"gitlab_instance,omitempty"`
+	GitLabProject   string `json:"gitlab_project,omitempty"`
 }
 
 // Serve binds a listener and runs the HTTP server until ctx is cancelled.
@@ -56,7 +62,7 @@ func Serve(ctx context.Context, opts Options, started func(url string)) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/analyze", handleAnalyze)
-	mux.HandleFunc("/api/initial", handleInitial(opts.File))
+	mux.HandleFunc("/api/initial", handleInitial(opts))
 	mux.HandleFunc("/api/resolve", handleResolve(opts))
 	mux.HandleFunc("/api/downstream", handleDownstream(opts))
 
@@ -124,16 +130,26 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleInitial serves the autodetected file's contents plus the current git
-// branch so the frontend can self-load and auto-analyze.
-func handleInitial(file string) http.HandlerFunc {
+// handleInitial serves the autodetected file's contents, the current git
+// branch, and whether GitLab resolution is available, so the frontend can
+// self-load, auto-analyze, and default to GitLab-resolved analysis when possible.
+func handleInitial(opts Options) http.HandlerFunc {
+	project := gitlab.DetectProjectFromDir(workDir(opts))
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 
-		resp := initialResponse{File: file, Branch: currentBranch()}
-		if file != "" {
-			data, err := os.ReadFile(file)
+		resp := initialResponse{
+			File:            opts.File,
+			Branch:          currentBranch(),
+			GitLabAvailable: opts.GitLab.Configured() && project != "",
+			GitLabProject:   project,
+		}
+		if resp.GitLabAvailable {
+			resp.GitLabInstance = opts.GitLab.URL
+		}
+		if opts.File != "" {
+			data, err := os.ReadFile(opts.File)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

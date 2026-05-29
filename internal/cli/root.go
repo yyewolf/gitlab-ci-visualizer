@@ -38,6 +38,7 @@ func Execute(assets Assets) error {
 			"current directory (or --file), and opens it in your browser.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			resolved := resolveFile(file)
+			workDir := workDirFor(resolved)
 
 			ctx, stop := signal.NotifyContext(context.Background(),
 				os.Interrupt, syscall.SIGTERM)
@@ -48,7 +49,8 @@ func Execute(assets Assets) error {
 				WebFS:     assets.WebFS,
 				SamplesFS: assets.SamplesFS,
 				File:      resolved,
-				GitLab:    gitlabConfig(),
+				WorkDir:   workDir,
+				GitLab:    gitlabConfig(workDir),
 			}
 
 			return server.Serve(ctx, opts, func(url string) {
@@ -68,24 +70,45 @@ func Execute(assets Assets) error {
 	return root.Execute()
 }
 
-// gitlabConfig resolves the GitLab instance + token. Env vars
-// (GLVIS_GITLAB_URL / GLVIS_GITLAB_TOKEN) win — they're how the VSCode extension
-// hands a per-launch token to the server — otherwise it falls back to the
-// credentials stored by `glvis login`.
-func gitlabConfig() gitlab.Config {
-	url := strings.TrimRight(os.Getenv("GLVIS_GITLAB_URL"), "/")
-	if url == "" {
-		url = "https://gitlab.com"
-	}
-
+// gitlabConfig resolves the GitLab instance + token for the repo in dir, so
+// that analyzing a CI in a repo hosted on an instance you're logged into
+// resolves includes automatically.
+//
+// Precedence:
+//  1. GLVIS_GITLAB_TOKEN (+ GLVIS_GITLAB_URL) env vars — how the VSCode
+//     extension hands a per-launch token to the spawned server.
+//  2. The instance derived from the repo's `origin` remote, with credentials
+//     loaded from `glvis login` for that instance.
+//  3. gitlab.com, unauthenticated.
+func gitlabConfig(dir string) gitlab.Config {
 	if token := os.Getenv("GLVIS_GITLAB_TOKEN"); token != "" {
+		url := strings.TrimRight(os.Getenv("GLVIS_GITLAB_URL"), "/")
+		if url == "" {
+			url = "https://gitlab.com"
+		}
 		return gitlab.Config{URL: url, Token: token}
 	}
 
-	if creds, err := auth.Load(url); err == nil {
+	instance := gitlab.DetectInstanceFromDir(dir)
+	if instance == "" {
+		instance = "https://gitlab.com"
+	}
+	if creds, err := auth.Load(instance); err == nil {
 		return gitlab.Config{URL: creds.Instance, Token: creds.Token}
 	}
-	return gitlab.Config{URL: url}
+	return gitlab.Config{URL: instance}
+}
+
+// workDirFor returns the directory used for git-based instance/project
+// detection: the resolved file's directory if set, otherwise the CWD.
+func workDirFor(file string) string {
+	if file != "" {
+		return filepath.Dir(file)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return "."
 }
 
 // resolveFile returns the explicit --file if given, otherwise the CWD

@@ -22,3 +22,22 @@ func TestDetectProject(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectInstance(t *testing.T) {
+	cases := []struct {
+		name, remote, want string
+	}{
+		{"ssh com", "git@gitlab.com:group/project.git", "https://gitlab.com"},
+		{"ssh self-hosted", "git@gitlab.example.com:a/b.git", "https://gitlab.example.com"},
+		{"https", "https://gitlab.com/group/project.git", "https://gitlab.com"},
+		{"https self-hosted", "https://git.acme.io/a/b/c.git", "https://git.acme.io"},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := DetectInstance(c.remote); got != c.want {
+				t.Errorf("DetectInstance(%q) = %q, want %q", c.remote, got, c.want)
+			}
+		})
+	}
+}

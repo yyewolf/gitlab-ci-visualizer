@@ -185,13 +185,51 @@ func DetectProject(remote string) string {
 	return p
 }
 
-// DetectProjectFromDir runs `git remote get-url origin` in dir and parses it.
-func DetectProjectFromDir(dir string) string {
+// DetectInstance parses a git remote URL into the GitLab instance base URL
+// (scheme + host), e.g. "https://gitlab.example.com". Returns "" if it can't.
+func DetectInstance(remote string) string {
+	remote = strings.TrimSpace(remote)
+	if remote == "" {
+		return ""
+	}
+	if m := sshRemoteRe.FindStringSubmatch(remote); m != nil {
+		// git@host:group/project(.git) → grab the host between '@' and ':'.
+		at := strings.IndexByte(remote, '@')
+		colon := strings.IndexByte(remote, ':')
+		if at >= 0 && colon > at {
+			return "https://" + remote[at+1:colon]
+		}
+		return ""
+	}
+	u, err := url.Parse(remote)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	scheme := u.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	return scheme + "://" + u.Host
+}
+
+// remoteURL returns the origin remote URL for dir, best-effort.
+func remoteURL(dir string) string {
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	return DetectProject(string(out))
+	return strings.TrimSpace(string(out))
+}
+
+// DetectProjectFromDir runs `git remote get-url origin` in dir and parses it.
+func DetectProjectFromDir(dir string) string {
+	return DetectProject(remoteURL(dir))
+}
+
+// DetectInstanceFromDir derives the GitLab instance base URL from dir's origin
+// remote, best-effort.
+func DetectInstanceFromDir(dir string) string {
+	return DetectInstance(remoteURL(dir))
 }
