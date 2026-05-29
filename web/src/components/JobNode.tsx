@@ -56,8 +56,10 @@ function JobNode({ data }: NodeProps) {
   return (
     // overflow-visible so the instant tooltip can escape the node box
     <div className="relative overflow-visible">
+      {/* Fixed size (w-52 × h-24 ≈ NODE_W × NODE_H) so nodes never overlap;
+          overflow-hidden clips any content that doesn't fit. */}
       <div
-        className={`bg-zinc-900 rounded-lg px-3 py-2 w-52 cursor-pointer transition-all ${ring} ${shadow} ${dimClass}`}
+        className={`bg-zinc-900 rounded-lg px-3 py-2 w-52 h-24 flex flex-col overflow-hidden cursor-pointer transition-all ${ring} ${shadow} ${dimClass}`}
       >
         {activeHandles.top && (
           <Handle type="target" id="top" position={Position.Top}
@@ -79,7 +81,10 @@ function JobNode({ data }: NodeProps) {
         {/* header */}
         <div className="flex items-start gap-2">
           <span className={`mt-1 flex-shrink-0 w-2 h-2 rounded-full ${dot}`} />
-          <span className="text-xs font-medium text-zinc-100 leading-tight break-all">
+          <span
+            className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100 leading-tight"
+            title={job.name}
+          >
             {job.name}
           </span>
           {isInstant && (

@@ -267,3 +267,12 @@ Skip if `--no-browser` is passed or `$GLVIS_NO_BROWSER` is set (useful for CI).
   than a full-screen overlay. `pointer-events-none` so it never blocks graph
   interaction. _Rationale: non-blocking feedback; the graph stays visible and
   usable during re-analysis._
+- **2026-05-29** — Stages are drawn as in-canvas **stage band** nodes
+  (`StageBandNode`), one tall column per visible stage tiled edge-to-edge so
+  their left borders form the vertical boundaries; the stage name sits in a
+  header at the top of each band. Replaces the floating `StageLegend`
+  rectangles. Bands are `zIndex:-1`, non-interactive (`pointer-events-none`,
+  not selectable/draggable) and live in the flow so they pan/zoom with the
+  graph. Band height = `STAGE_HEADER_H + maxJobsInStage*(NODE_H+JOB_GAP)`.
+  _Rationale: the user wanted stage structure shown as boundaries that move
+  with the graph, not detached chips that ignore zoom/pan._

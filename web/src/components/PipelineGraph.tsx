@@ -11,6 +11,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { Pipeline, Job, Edge } from "../types";
 import JobNode, { type JobNodeData } from "./JobNode";
+import StageBandNode, { type StageBandData } from "./StageBandNode";
 
 interface Props {
   pipeline: Pipeline;
@@ -21,12 +22,13 @@ interface Props {
 }
 
 const NODE_W = 208;
-const NODE_H = 80;
+const NODE_H = 96; // fixed job-node height — JobNode renders at this height (h-24)
 const STAGE_GAP = 80;
-const JOB_GAP = 12;
+const JOB_GAP = 16;
 const STAGE_HEADER_H = 32;
+const STAGE_TOP_PAD = 20; // gap between the stage-name header and the first job
 
-const nodeTypes = { job: JobNode };
+const nodeTypes = { job: JobNode, stageBand: StageBandNode };
 
 export default function PipelineGraph({
   pipeline,
@@ -38,7 +40,7 @@ export default function PipelineGraph({
   const [hoveredJobName, setHoveredJobName] = useState<string | null>(null);
 
   // Stable structure: positions, isInstant, visible sets
-  const { baseNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames } =
+  const { baseNodes, stageNodes, baseFlowEdges, allVisibleEdges, visibleJobNames } =
     useMemo(
       () => buildGraph(pipeline, showStageEdges, showDisabled),
       [pipeline, showStageEdges, showDisabled],
@@ -57,9 +59,11 @@ export default function PipelineGraph({
     return computeAncestors(hoveredJobName, allVisibleEdges, visibleJobNames);
   }, [hoveredJobName, hoveredJobEnabled, allVisibleEdges, visibleJobNames]);
 
-  // Merge hover/selection state into nodes
+  // Merge hover/selection state into nodes. Stage band nodes are prepended
+  // (and carry zIndex: -1) so they render behind the job nodes.
   const nodes: Node[] = useMemo(
     () =>
+      stageNodes.concat(
       baseNodes.map((n) => ({
         ...n,
         data: {
@@ -74,7 +78,8 @@ export default function PipelineGraph({
             !(ancestorPath?.jobs.has(n.id)),
         } satisfies JobNodeData,
       })),
-    [baseNodes, selectedJob, hoveredJobName, hoveredJobEnabled, ancestorPath],
+      ),
+    [stageNodes, baseNodes, selectedJob, hoveredJobName, hoveredJobEnabled, ancestorPath],
   );
 
   // Merge path highlighting into edges
@@ -135,13 +140,6 @@ export default function PipelineGraph({
         <Background color="#27272a" gap={20} />
         <Controls className="!bg-zinc-900 !border-zinc-700 [&>button]:!bg-zinc-900 [&>button]:!border-zinc-700 [&>button]:!text-zinc-400 [&>button:hover]:!bg-zinc-800" />
       </ReactFlow>
-
-      {visibleStages.length > 0 && (
-        <StageLegend
-          stages={visibleStages}
-          jobs={baseNodes.map((n) => (n.data as JobNodeData).job)}
-        />
-      )}
     </div>
   );
 }
@@ -154,6 +152,7 @@ function buildGraph(
   showDisabled: boolean,
 ): {
   baseNodes: Node[];
+  stageNodes: Node[];
   baseFlowEdges: FlowEdge[];
   allVisibleEdges: Edge[];
   visibleStages: string[];
@@ -227,7 +226,7 @@ function buildGraph(
       type: "job",
       position: {
         x: si * (NODE_W + STAGE_GAP),
-        y: STAGE_HEADER_H + count * (NODE_H + JOB_GAP),
+        y: STAGE_HEADER_H + STAGE_TOP_PAD + count * (NODE_H + JOB_GAP),
       },
       data: {
         job,
@@ -241,6 +240,38 @@ function buildGraph(
       } satisfies JobNodeData,
     };
   });
+
+  // Stage band background nodes: one tall column per visible stage, tiled
+  // edge-to-edge so their left borders form the vertical boundaries between
+  // stages. Drawn behind jobs and non-interactive.
+  const maxJobsInStage = Math.max(
+    1,
+    ...visibleStages.map((s) =>
+      visibleJobs.reduce((n, j) => (j.stage === s ? n + 1 : n), 0),
+    ),
+  );
+  const bandHeight =
+    STAGE_HEADER_H + STAGE_TOP_PAD + maxJobsInStage * (NODE_H + JOB_GAP);
+  const bandWidth = NODE_W + STAGE_GAP;
+  const stageNodes: Node[] = visibleStages.map((stage, i) => ({
+    id: `__stage__${stage}`,
+    type: "stageBand",
+    position: { x: i * (NODE_W + STAGE_GAP) - STAGE_GAP / 2, y: 0 },
+    width: bandWidth,
+    height: bandHeight,
+    draggable: false,
+    selectable: false,
+    focusable: false,
+    zIndex: -1,
+    className: "pointer-events-none",
+    style: { width: bandWidth, height: bandHeight },
+    data: {
+      label: stage,
+      count: stageJobCounts.get(stage) ?? 0,
+      index: i,
+      isLast: i === visibleStages.length - 1,
+    } satisfies StageBandData,
+  }));
 
   const baseFlowEdges: FlowEdge[] = drawnEdges.map((e) => {
     const sameStage = jobStage.get(e.from) === jobStage.get(e.to);
@@ -265,7 +296,7 @@ function buildGraph(
     };
   });
 
-  return { baseNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames };
+  return { baseNodes, stageNodes, baseFlowEdges, allVisibleEdges, visibleStages, visibleJobNames };
 }
 
 // ---- ancestor BFS ----
@@ -299,30 +330,4 @@ function computeAncestors(
     }
   }
   return { jobs, edgeIds };
-}
-
-// ---- stage legend ----
-
-function StageLegend({ stages, jobs }: { stages: string[]; jobs: Job[] }) {
-  const counts = new Map<string, number>();
-  for (const j of jobs) counts.set(j.stage, (counts.get(j.stage) ?? 0) + 1);
-
-  return (
-    <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-2 pointer-events-none z-10">
-      {stages.map((s) => {
-        const count = counts.get(s) ?? 0;
-        return (
-          <div
-            key={s}
-            className="bg-zinc-900/80 backdrop-blur border border-zinc-700 rounded px-2 py-1 text-center"
-          >
-            <p className="text-[10px] font-mono text-zinc-300">{s}</p>
-            <p className="text-[9px] text-zinc-600">
-              {count} job{count !== 1 ? "s" : ""}
-            </p>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
