@@ -108,38 +108,47 @@ export default function App() {
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  // Standalone (glvis CLI) mode: ask the server for the autodetected/--file
-  // .gitlab-ci.yml and current branch, then auto-analyze.
+  // Standalone (glvis CLI) mode: fetch the autodetected/--file .gitlab-ci.yml
+  // and current branch from the server, then queue an auto-analyze.
+  const loadInitial = useCallback(async () => {
+    try {
+      const res = await fetch("/api/initial");
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        yaml?: string;
+        branch?: string;
+        gitlab_available?: boolean;
+      };
+      if (!data.yaml) return;
+      setConditions((c) => ({
+        ...c,
+        yaml: data.yaml as string,
+        ...(data.branch ? { branch: data.branch } : {}),
+      }));
+      // When the repo is hosted on a GitLab instance we have a token for,
+      // default to GitLab-resolved analysis so include: directives resolve.
+      if (data.gitlab_available) setGitlabMode(true);
+      setPendingAnalyze(true);
+    } catch {
+      // No initial file available - user can paste manually.
+    }
+  }, []);
+
   useEffect(() => {
     if (vscodeApi) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/initial");
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          yaml?: string;
-          branch?: string;
-          gitlab_available?: boolean;
-        };
-        if (cancelled || !data.yaml) return;
-        setConditions((c) => ({
-          ...c,
-          yaml: data.yaml as string,
-          ...(data.branch ? { branch: data.branch } : {}),
-        }));
-        // When the repo is hosted on a GitLab instance we have a token for,
-        // default to GitLab-resolved analysis so include: directives resolve.
-        if (data.gitlab_available) setGitlabMode(true);
-        setPendingAnalyze(true);
-      } catch {
-        // No initial file available - user can paste manually.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    loadInitial();
+  }, [loadInitial]);
+
+  // Standalone mode: subscribe to server-sent file-change events so editing
+  // the .gitlab-ci.yml on disk reloads and re-analyzes it automatically.
+  useEffect(() => {
+    if (vscodeApi) return;
+    const source = new EventSource("/api/watch");
+    source.addEventListener("change", () => {
+      loadInitial();
+    });
+    return () => source.close();
+  }, [loadInitial]);
 
   useEffect(() => {
     const keys = pipeline.suggested_variables;

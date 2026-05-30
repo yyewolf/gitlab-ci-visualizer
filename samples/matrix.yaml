@@ -1,27 +1,27 @@
 stages:
-  - build
-  - test
-  - report
+- build
+- test
+- report
 
 # Simple parallel job — same job runs N times concurrently, no variable differences.
 lint:
   stage: build
   parallel: 3
   script:
-    - echo "Linting shard $CI_NODE_INDEX of $CI_NODE_TOTAL"
+  - echo "Linting shard $CI_NODE_INDEX of $CI_NODE_TOTAL"
 
 # Matrix across a single dimension.
 build:
   stage: build
   parallel:
     matrix:
-      - ARCH: [amd64, arm64]
-        OS: [linux, darwin, windows]
+    - ARCH: [ amd64, arm64 ]
+      OS: [ linux, darwin, windows ]
   script:
-    - echo "Building for $OS/$ARCH"
+  - echo "Building for $OS/$ARCH"
   artifacts:
     paths:
-      - bin/$OS-$ARCH/
+    - bin/$OS-$ARCH/
     expire_in: 1 day
 
 # Matrix across two independent dimensions — produces a cross-product.
@@ -29,14 +29,14 @@ build:
 integration-test:
   stage: test
   needs:
-    - job: build
-      artifacts: false
+  - job: build
+    artifacts: false
   parallel:
     matrix:
-      - RUNTIME: [node18, node20]
-        DB: [postgres, mysql, sqlite]
+    - RUNTIME: [ node18, node20 ]
+      DB: [ postgres, mysql, sqlite ]
   script:
-    - echo "Testing $RUNTIME against $DB"
+  - echo "Testing $RUNTIME against $DB"
   artifacts:
     reports:
       junit: test-results-$RUNTIME-$DB.xml
@@ -46,15 +46,15 @@ unit-test:
   stage: test
   parallel:
     matrix:
-      - PYTHON: [python3.10, python3.11, python3.12]
+    - PYTHON: [ python3.10, python3.11, python3.12 ]
   script:
-    - echo "Running tests on $PYTHON"
+  - echo "Running tests on $PYTHON"
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      variables:
-        PYTHON: python3.12
-      when: on_success
-    - when: on_success
+  - if: $CI_COMMIT_BRANCH == "main"
+    variables:
+      PYTHON: python3.12
+    when: on_success
+  - when: on_success
   artifacts:
     reports:
       coverage_report:
@@ -65,12 +65,12 @@ unit-test:
 coverage-report:
   stage: report
   needs:
-    - job: unit-test
-    - job: integration-test
+  - job: unit-test
+  - job: integration-test
   script:
-    - echo "Merging coverage reports"
+  - echo "Merging coverage reports"
   coverage: '/Total coverage: \d+\.\d+%/'
   artifacts:
     paths:
-      - coverage-merged.html
+    - coverage-merged.html
     expire_in: 1 week

@@ -4,10 +4,10 @@
 # which jobs pass data to which, and which jobs are excluded from the flow.
 
 stages:
-  - build
-  - test
-  - package
-  - deploy
+- build
+- test
+- package
+- deploy
 
 # ── Build stage ────────────────────────────────────────────────────────────
 # Both jobs produce artifacts consumed by later stages.
@@ -15,20 +15,20 @@ stages:
 build-frontend:
   stage: build
   script:
-    - npm ci
-    - npm run build
+  - npm ci
+  - npm run build
   artifacts:
     paths:
-      - dist/
+    - dist/
     expire_in: 1 day
 
 build-backend:
   stage: build
   script:
-    - go build -o bin/server .
+  - go build -o bin/server .
   artifacts:
     paths:
-      - bin/server
+    - bin/server
     expire_in: 1 day
 
 # ── Test stage ─────────────────────────────────────────────────────────────
@@ -39,9 +39,9 @@ build-backend:
 test-unit:
   stage: test
   needs:
-    - job: build-backend
+  - job: build-backend
   script:
-    - go test -coverprofile=coverage.out ./...
+  - go test -coverprofile=coverage.out ./...
   coverage: '/coverage: \d+\.\d+%/'
   artifacts:
     reports:
@@ -53,10 +53,10 @@ test-unit:
 test-e2e:
   stage: test
   needs:
-    - job: build-frontend
-    - job: build-backend
+  - job: build-frontend
+  - job: build-backend
   script:
-    - ./run-e2e.sh
+  - ./run-e2e.sh
   artifacts:
     reports:
       junit: e2e-report.xml
@@ -64,10 +64,10 @@ test-e2e:
 lint:
   stage: test
   needs:
-    - job: build-backend
-      artifacts: false  # ordering only, no binary download
+  - job: build-backend
+    artifacts: false # ordering only, no binary download
   script:
-    - golangci-lint run
+  - golangci-lint run
 
 # ── Package stage ──────────────────────────────────────────────────────────
 # No explicit needs → receives artifacts from ALL jobs in the previous
@@ -78,10 +78,10 @@ lint:
 package:
   stage: package
   script:
-    - make package
+  - make package
   artifacts:
     paths:
-      - release.tar.gz
+    - release.tar.gz
     expire_in: 1 week
   release:
     tag_name: $CI_COMMIT_TAG
@@ -95,29 +95,29 @@ package:
 deploy-staging:
   stage: deploy
   needs:
-    - job: package
+  - job: package
   environment: staging
   script:
-    - ./deploy.sh staging
+  - ./deploy.sh staging
 
 notify:
   stage: deploy
   needs:
-    - job: deploy-staging
-      artifacts: false
-  dependencies: []  # explicitly opt out of all artifact downloads
+  - job: deploy-staging
+    artifacts: false
+  dependencies: [] # explicitly opt out of all artifact downloads
   script:
-    - ./notify.sh "Staging deploy complete"
+  - ./notify.sh "Staging deploy complete"
   when: always
 
 deploy-prod:
   stage: deploy
   needs:
-    - job: package
-    - job: deploy-staging
-      artifacts: false  # only gate on success, don't need staging output
+  - job: package
+  - job: deploy-staging
+    artifacts: false # only gate on success, don't need staging output
   environment: production
   when: manual
   interruptible: false
   script:
-    - ./deploy.sh production
+  - ./deploy.sh production

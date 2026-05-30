@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/yyewolf/gitlab-ci-visualizer/internal/gitlab"
 	"github.com/yyewolf/gitlab-ci-visualizer/internal/gitlabci"
@@ -65,6 +66,7 @@ func Serve(ctx context.Context, opts Options, started func(url string)) error {
 	mux.HandleFunc("/api/initial", handleInitial(opts))
 	mux.HandleFunc("/api/resolve", handleResolve(opts))
 	mux.HandleFunc("/api/downstream", handleDownstream(opts))
+	mux.HandleFunc("/api/watch", handleWatch(opts))
 
 	// Sample YAML files.
 	mux.HandleFunc("/samples/", func(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +161,59 @@ func handleInitial(opts Options) http.HandlerFunc {
 
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			log.Printf("encode initial: %v", err)
+		}
+	}
+}
+
+// handleWatch streams Server-Sent Events whenever the watched file changes.
+// It polls the file's modification time (no extra dependencies) and emits a
+// "change" event so the frontend can re-fetch and re-analyze. If no file is
+// configured the stream stays open but idle.
+func handleWatch(opts Options) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		// Initial comment so the client knows the stream is live.
+		fmt.Fprint(w, ":ok\n\n")
+		flusher.Flush()
+
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		var last time.Time
+		if opts.File != "" {
+			if fi, err := os.Stat(opts.File); err == nil {
+				last = fi.ModTime()
+			}
+		}
+
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-ticker.C:
+				if opts.File == "" {
+					continue
+				}
+				fi, err := os.Stat(opts.File)
+				if err != nil {
+					continue
+				}
+				if mt := fi.ModTime(); mt.After(last) {
+					last = mt
+					fmt.Fprint(w, "event: change\ndata: {}\n\n")
+					flusher.Flush()
+				}
+			}
 		}
 	}
 }

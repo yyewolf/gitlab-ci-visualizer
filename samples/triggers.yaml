@@ -1,31 +1,31 @@
 stages:
-  - build
-  - test
-  - deploy
-  - notify
+- build
+- test
+- deploy
+- notify
 
 build-app:
   stage: build
   script:
-    - echo "Building application"
+  - echo "Building application"
   artifacts:
     paths:
-      - dist/
+    - dist/
     expire_in: 1 day
 
 unit-tests:
   stage: test
   needs:
-    - build-app
+  - build-app
   script:
-    - echo "Running unit tests"
+  - echo "Running unit tests"
 
 integration-tests:
   stage: test
   needs:
-    - build-app
+  - build-app
   script:
-    - echo "Running integration tests"
+  - echo "Running integration tests"
 
 # Parent-child trigger: child pipeline YAML lives in the same repo.
 # In VS Code, opening this file and clicking "Analyze pipeline" will
@@ -33,8 +33,8 @@ integration-tests:
 deploy-infra:
   stage: deploy
   needs:
-    - unit-tests
-    - integration-tests
+  - unit-tests
+  - integration-tests
   trigger:
     include: .gitlab-ci-infra.yml
     strategy: depend
@@ -45,7 +45,7 @@ deploy-infra:
 deploy-docs:
   stage: deploy
   needs:
-    - unit-tests
+  - unit-tests
   trigger:
     project: my-org/docs-site
     branch: main
@@ -55,7 +55,7 @@ deploy-docs:
 notify-slack:
   stage: notify
   needs:
-    - deploy-infra
-    - deploy-docs
+  - deploy-infra
+  - deploy-docs
   script:
-    - echo "Notifying team"
+  - echo "Notifying team"
