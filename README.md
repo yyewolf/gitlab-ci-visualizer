@@ -4,6 +4,8 @@ You paste a `.gitlab-ci.yml`, tell it what to simulate (branch, pipeline source,
 
 There's a `glvis` CLI that opens it in your browser, and a VSCode extension that opens beside your file.
 
+![GitLab CI Visualizer](.assets/screenshot.png)
+
 ---
 
 ## What it does
