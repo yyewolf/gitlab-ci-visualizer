@@ -183,7 +183,7 @@ func handleWatch(opts Options) http.HandlerFunc {
 		}
 
 		// Initial comment so the client knows the stream is live.
-		fmt.Fprint(w, ":ok\n\n")
+		_, _ = fmt.Fprint(w, ":ok\n\n")
 		flusher.Flush()
 
 		ticker := time.NewTicker(500 * time.Millisecond)
@@ -210,7 +210,7 @@ func handleWatch(opts Options) http.HandlerFunc {
 				}
 				if mt := fi.ModTime(); mt.After(last) {
 					last = mt
-					fmt.Fprint(w, "event: change\ndata: {}\n\n")
+					_, _ = fmt.Fprint(w, "event: change\ndata: {}\n\n")
 					flusher.Flush()
 				}
 			}
