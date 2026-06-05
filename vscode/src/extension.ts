@@ -19,9 +19,118 @@ export function activate(context: vscode.ExtensionContext) {
   promptAuthIfNeeded(context);
 }
 
-async function promptAuthIfNeeded(context: vscode.ExtensionContext) {
+
+// getWorkspaceRoot returns the filesystem path for the active editor’s workspace
+// folder, or the first open workspace folder.
+function getWorkspaceRoot(): string | undefined {
+  const activeEditor = vscode.window.activeTextEditor;
+  if (activeEditor) {
+    const folder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+    if (folder) return folder.uri.fsPath;
+  }
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+// detectInstanceFromWorkspace reads `git remote get-url origin` and parses the
+// GitLab instance base URL, mirroring the Go-side DetectInstanceFromDir logic.
+function detectInstanceFromWorkspace(): string | undefined {
+  const root = getWorkspaceRoot();
+  if (!root) return undefined;
+  try {
+    const remote = execSync("git remote get-url origin", { cwd: root, timeout: 3000 }).toString().trim();
+    if (!remote) return undefined;
+
+    // git@host:group/project(.git) → https://host
+    const sshRe = /^git@[^:]+:(.+?)(?:\.git)?$/;
+    if (sshRe.test(remote)) {
+      const at = remote.indexOf("@");
+      const colon = remote.indexOf(":");
+      if (at >= 0 && colon > at) {
+        return "https://" + remote.slice(at + 1, colon);
+      }
+      return undefined;
+    }
+
+    // ssh://git@host:path or ssh://host:path → https://host (strip SSH port,
+    // API is always on HTTPS port 443).
+    const sshProtoRe = /^ssh:\/\//i;
+    if (sshProtoRe.test(remote)) {
+      try {
+        const u = new URL(remote);
+        if (u.hostname) {
+          return "https://" + u.hostname;
+        }
+      } catch {
+        // malformed ssh:// URL — fall through to generic parser
+      }
+    }
+
+    // https://host/group/project(.git) or https://token@host/group/project(.git)
+    let urlStr = remote;
+    try {
+      const u = new URL(remote);
+      // Strip userinfo if present (e.g. token in URL)
+      urlStr = `${u.protocol}//${u.host}${u.pathname}`;
+    } catch {
+      // Not a valid URL, try the raw string best-effort
+    }
+    try {
+      const u = new URL(urlStr);
+      if (!u.host) return undefined;
+      let path = u.pathname;
+      if (path === "/") path = "";
+      // The instance URL is scheme://host (no path)
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+// getInstanceUrl returns the effective GitLab instance URL for the current
+// context (workspace remote beats global setting).
+function getInstanceUrl(): string {
+  const detected = detectInstanceFromWorkspace();
+  if (detected) return detected;
   const cfg = vscode.workspace.getConfiguration("gitlab-ci-visualizer");
-  const url = (cfg.get<string>("gitlabUrl") || "https://gitlab.com").replace(/\/$/, "");
+  return (cfg.get<string>("gitlabUrl") || "https://gitlab.com").replace(/\/$/, "");
+}
+
+// getEffectiveCredentials tries VSCode SecretStorage first (most reliable in
+// sandboxed contexts like VSCode on macOS). Only falls back to the OS
+// keychain when no fallback is present.
+async function getEffectiveCredentials(context: vscode.ExtensionContext): Promise<{ url: string; token: string } | null> {
+  const url = getInstanceUrl();
+
+  // 1. VSCode SecretStorage is the most reliable source in sandboxed contexts.
+  const token = await context.secrets.get(`glvis:token:${url}`);
+  if (token) {
+    return { url, token };
+  }
+
+  // 2. Fallback: let the server read from the shared keychain natively.
+  try {
+    const res = await runGlvis(context, ["auth", "status", "--instance", url]);
+    if (res.code === 0) {
+      return null; // Keychain works; server will read it natively.
+    }
+  } catch {
+    // glvis binary not found
+  }
+
+  return null;
+}
+
+async function promptAuthIfNeeded(context: vscode.ExtensionContext) {
+  const url = getInstanceUrl();
+
+  // 1. Check VSCode SecretStorage first (most reliable in sandboxed contexts).
+  const secretFallback = await context.secrets.get(`glvis:token:${url}`);
+  if (secretFallback) return; // fallback present, server will inject it later
+
+  // 2. Check the OS keychain as secondary source.
   try {
     const res = await runGlvis(context, ["auth", "status", "--instance", url]);
     if (res.code === 0) return; // already configured for this instance
@@ -106,11 +215,16 @@ function runGlvis(
 async function configureGitlabAuth(context: vscode.ExtensionContext) {
   const cfg = vscode.workspace.getConfiguration("gitlab-ci-visualizer");
 
+  // Default to the workspace-detected instance (via git remote), falling back
+  // to the globally configured default so multi-instance setups behave
+  // correctly per-project.
+  const detected = getInstanceUrl();
+
   // Step 1: instance URL
   const url = await vscode.window.showInputBox({
     title: "GitLab CI: Configure Authentication (1/2)",
     prompt: "GitLab instance URL",
-    value: cfg.get<string>("gitlabUrl") || "https://gitlab.com",
+    value: detected,
     placeHolder: "https://gitlab.com",
   });
   if (url === undefined) return;
@@ -166,9 +280,22 @@ async function configureGitlabAuth(context: vscode.ExtensionContext) {
       );
       return;
     }
+
+    // Store a fallback in VSCode's SecretStorage so sandboxed extension hosts
+    // (e.g. VSCode on macOS) can still authenticate the spawned server process.
+    // The key is the *exact* instance URL that login succeeded for, so
+    // multi-instance setups work even when the keychain is locked.
+    await context.secrets.store(`glvis:token:${baseUrl}`, token);
+
     vscode.window.showInformationMessage(
       `GitLab CI Visualizer: ${res.stdout.trim() || "authentication configured."}`
     );
+
+    // If a server is already running it is using the old (or no) credentials.
+    // Kill it so the next panel spawns a fresh process with the new env vars.
+    if (PreviewPanel.currentPanel) {
+      PreviewPanel.currentPanel.killServer();
+    }
   } catch (err) {
     vscode.window.showErrorMessage(`Failed to run glvis login: ${String(err)}`);
   }
@@ -398,6 +525,16 @@ class PreviewPanel {
     return this.serverPromise;
   }
 
+  // killServer stops any running glvis process so the next getServer() call
+  // spawns a fresh instance. Used after credential changes.
+  killServer() {
+    if (this.serverProc) {
+      this.serverProc.kill();
+      this.serverProc = undefined;
+    }
+    this.serverPromise = undefined;
+  }
+
   private async startServer(): Promise<string> {
     const bin = resolveBinary(this.context);
     if (!bin) {
@@ -405,14 +542,19 @@ class PreviewPanel {
     }
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
+    // Detect whether the native keychain works in this VSCode context.
+    // If not, inject the token via env vars so the spawned server can use it.
+    const creds = await getEffectiveCredentials(this.context);
+
     return new Promise<string>((resolve, reject) => {
-      // No token/URL is passed: the server detects the GitLab instance from the
-      // repo's git remote and loads the matching credentials from the shared
-      // store (`glvis login`), so multiple instances work per-repo.
       const env: NodeJS.ProcessEnv = {
         ...process.env,
         GLVIS_NO_BROWSER: "1",
       };
+      if (creds) {
+        env.GLVIS_GITLAB_URL = creds.url;
+        env.GLVIS_GITLAB_TOKEN = creds.token;
+      }
 
       const proc = spawn(bin, ["--no-browser", "--addr=127.0.0.1:0"], { cwd: root, env });
       this.serverProc = proc;

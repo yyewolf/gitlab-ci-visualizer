@@ -209,6 +209,10 @@ func DetectInstance(remote string) string {
 	if scheme == "" {
 		scheme = "https"
 	}
+	// ssh:// is a git transport; the API lives on HTTPS.
+	if scheme == "ssh" {
+		return "https://" + u.Hostname()
+	}
 	return scheme + "://" + u.Host
 }
 
